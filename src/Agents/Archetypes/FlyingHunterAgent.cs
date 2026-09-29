@@ -8,6 +8,10 @@ namespace SilksongNeuralSmart.Agents.Archetypes
     {
         public override string ArchetypeName => "Flying Silk Hunter";
 
+        public override bool IsFlyingArchetype => true;
+
+        public override Vector2 ColliderSize => new Vector2(1.2f, 1.2f);
+
         protected override void Awake()
         {
             MaxHealth = 65f;

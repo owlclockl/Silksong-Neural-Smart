@@ -10,6 +10,215 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
+    <!-- =====================================================================
+         ГЛАВНОЕ МЕНЮ — точно как в самой игре: отсюда запускаются режимы
+         ===================================================================== -->
+    <div id="menuScreen" class="screen active">
+        <div class="menu-bg"></div>
+        <div class="menu-wrap">
+            <div class="menu-logo">⚔</div>
+            <h1 class="menu-title">SILKSONG NEURAL SMART</h1>
+            <p class="menu-sub">Нейросетевой ИИ для мобов и Хорнет · тренировочные арены · честный баланс</p>
+
+            <div class="menu-buttons" id="menuButtons">
+                <button class="menu-btn primary" id="menuGrandArena">
+                    <span class="menu-btn-icon">🏟</span>
+                    <span class="menu-btn-text">
+                        <b>ВЕЛИКАЯ АРЕНА — ОБУЧЕНИЕ МОБОВ И ХОРНЕТ</b>
+                        <small>Отдельный режим · одна большая арена · мобы и Хорнет учатся одновременно · свои сохранения</small>
+                    </span>
+                </button>
+
+                <button class="menu-btn" id="menuClassic">
+                    <span class="menu-btn-icon">🥋</span>
+                    <span class="menu-btn-text">
+                        <b>КЛАССИЧЕСКОЕ ДОДЗЁ — ДУЭЛЬ 1 НА 1</b>
+                        <small>Хорнет против одного моба, 3 тренировочные комнаты</small>
+                    </span>
+                </button>
+            </div>
+
+            <!-- Выбор слота сохранения отдельного режима -->
+            <div class="menu-slots" id="menuSlots">
+                <div class="menu-slots-head">
+                    <span>СЛОТЫ СОХРАНЕНИЙ РЕЖИМА «ВЕЛИКАЯ АРЕНА»</span>
+                    <button id="menuSlotsBack" class="link-btn">← Назад</button>
+                </div>
+                <div id="slotList" class="slot-list"></div>
+
+                <div class="menu-params">
+                    <div class="menu-param">
+                        <span>Мобов одновременно</span>
+                        <div class="button-group">
+                            <button id="paramMobsMinus">−</button>
+                            <button class="param-value" id="paramMobsValue">4</button>
+                            <button id="paramMobsPlus">+</button>
+                        </div>
+                    </div>
+                    <div class="menu-param">
+                        <span>Длительность раунда</span>
+                        <div class="button-group">
+                            <button id="paramTimeMinus">−</button>
+                            <button class="param-value" id="paramTimeValue">45 с</button>
+                            <button id="paramTimePlus">+</button>
+                        </div>
+                    </div>
+                    <div class="menu-param">
+                        <span>Система волн</span>
+                        <div class="button-group">
+                            <button id="paramWaves" class="toggle-btn active">ВКЛ</button>
+                        </div>
+                    </div>
+                    <div class="menu-param">
+                        <span>Честный баланс урона стаи</span>
+                        <div class="button-group">
+                            <button id="paramBalance" class="toggle-btn active">ВКЛ</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="menu-footer">
+                В моде для Silksong эта же кнопка появляется в <b>главном меню игры</b> —
+                или нажмите <span class="kbd">F6</span>. Сохранения режима лежат в
+                <code>BepInEx/config/SilksongNeuralSmart/GrandArena/</code>
+            </div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         РЕЖИМ «ВЕЛИКАЯ АРЕНА»
+         ===================================================================== -->
+    <div id="grandScreen" class="screen">
+        <div class="app-container">
+            <header>
+                <div class="brand">
+                    <div class="brand-icon">🏟</div>
+                    <div><h1>Великая Арена</h1></div>
+                    <span class="brand-badge" id="grandSlotBadge">Слот 1</span>
+                    <span class="brand-badge" id="grandWaveBadge" style="background: rgba(251,197,49,0.15); color: var(--accent-gold); border-color: rgba(251,197,49,0.35);">Волна 1</span>
+                </div>
+
+                <div class="top-controls">
+                    <button id="grandPlay" class="primary">▶ Обучение</button>
+                    <button id="grandPause" style="display:none;">⏸ Пауза</button>
+                    <button id="grandResetEpisode">↺ Новый раунд</button>
+                    <button id="grandSave">💾 Сохранить</button>
+
+                    <div class="button-group" id="grandSpeedGroup">
+                        <button class="gspeed-btn active" data-speed="1">1x</button>
+                        <button class="gspeed-btn" data-speed="2">2x</button>
+                        <button class="gspeed-btn" data-speed="5">5x</button>
+                        <button class="gspeed-btn" data-speed="10">10x</button>
+                        <button class="gspeed-btn" data-speed="20">20x</button>
+                    </div>
+
+                    <button id="grandExit">⏏ В главное меню</button>
+                </div>
+            </header>
+
+            <main class="main-grid">
+                <div class="arena-column">
+                    <div class="arena-card">
+                        <div class="arena-header">
+                            <div class="arena-title">🏟 <span id="grandRoomLabel">Великая Арена Фарлума — мобы и Хорнет обучаются вместе</span></div>
+                            <div class="button-group">
+                                <button id="grandHornetMode" class="control-btn active">🤖 Хорнет: ИИ</button>
+                                <button id="grandSensorsBtn">👁 Лучи: ВКЛ</button>
+                            </div>
+                        </div>
+
+                        <canvas id="grandCanvas" width="1120" height="520"></canvas>
+
+                        <div class="arena-actions-bar">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:12px; color: var(--text-muted); font-weight:600;">РАЗМЕР СТАИ:</span>
+                                <div class="button-group">
+                                    <button id="grandMobsMinus">−</button>
+                                    <button class="param-value" id="grandMobsValue">4</button>
+                                    <button id="grandMobsPlus">+</button>
+                                </div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:12px; color: var(--text-muted); font-weight:600;">СЛОТ:</span>
+                                <div class="button-group" id="grandSlotGroup">
+                                    <button class="gslot-btn active" data-slot="1">1</button>
+                                    <button class="gslot-btn" data-slot="2">2</button>
+                                    <button class="gslot-btn" data-slot="3">3</button>
+                                </div>
+                                <button id="grandLoadSlot">📂 Загрузить</button>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <button id="grandExportBrains" style="font-size:11px;">💾 Экспорт всех мозгов</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="stats-strip">
+                        <div class="stat-card">
+                            <div class="stat-label">Волна / рекорд</div>
+                            <div class="stat-value" style="color: var(--accent-gold);" id="gStatWave">1 <span style="font-size:13px; color: var(--text-muted);">(рекорд 1)</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Победы Хорнет</div>
+                            <div class="stat-value" style="color: var(--accent-blue);" id="gStatHornet">0 <span style="font-size:13px; color: var(--text-muted);">(0.0%)</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Победы стаи</div>
+                            <div class="stat-value" style="color: var(--accent-red);" id="gStatPack">0 <span style="font-size:13px; color: var(--text-muted);">(0.0%)</span></div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Мобов повержено / решений в сек.</div>
+                            <div class="stat-value" style="color: var(--accent-green);" id="gStatMobs">0 <span style="font-size:13px; color: var(--text-muted);">(0/с)</span></div>
+                        </div>
+                    </div>
+
+                    <div class="guide-box" id="grandGuide" style="display:none;">
+                        <strong>Ручное управление Хорнет:</strong>
+                        <span class="kbd">A</span>/<span class="kbd">D</span> — Бег |
+                        <span class="kbd">K</span>/<span class="kbd">Space</span> — Прыжок |
+                        <span class="kbd">L</span>/<span class="kbd">Shift</span> — Рывок |
+                        <span class="kbd">J</span> — Удар |
+                        <span class="kbd">I</span> — Пого |
+                        <span class="kbd">U</span> — Лечение шелком
+                    </div>
+                </div>
+
+                <div class="sidebar-column">
+                    <div class="sidebar-card">
+                        <div class="card-title">
+                            <span>🧠 Нейросеть в реальном времени</span>
+                            <div class="button-group" style="font-size:10px;">
+                                <button id="gBrainHornet" class="active" style="padding:2px 6px; font-size:10px;">Хорнет</button>
+                                <button id="gBrainMob" style="padding:2px 6px; font-size:10px;">Моб</button>
+                            </div>
+                        </div>
+                        <canvas id="grandNetCanvas" width="348" height="200"></canvas>
+                        <div class="prob-list" id="gActionProbList"></div>
+                    </div>
+
+                    <div class="sidebar-card">
+                        <div class="card-title"><span>📈 Фитнес: Хорнет против стаи</span></div>
+                        <canvas id="grandChartCanvas" width="348" height="120"></canvas>
+                    </div>
+
+                    <div class="sidebar-card">
+                        <div class="card-title"><span>🐛 Эволюция архетипов</span></div>
+                        <div id="gArchetypeList" class="archetype-list"></div>
+                        <div style="display:flex; gap:8px; margin-top:12px;">
+                            <button id="grandWavesToggle" style="flex:1; font-size:11px;">🌊 Волны: ВКЛ</button>
+                            <button id="grandBalanceToggle" style="flex:1; font-size:11px;">⚖ Баланс: ВКЛ</button>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         КЛАССИЧЕСКОЕ ДОДЗЁ 1 на 1 (существующий режим)
+         ===================================================================== -->
+    <div id="classicScreen" class="screen">
     <div class="app-container">
         <!-- Top Navigation / Header -->
         <header>
@@ -22,6 +231,7 @@
             </div>
 
             <div class="top-controls">
+                <button id="btnBackToMenu">⏏ Главное меню</button>
                 <button id="btnStartTraining" class="primary">▶ Запустить обучение (Start Training)</button>
                 <button id="btnPauseTraining" style="display: none;">⏸ Пауза (Pause)</button>
                 <button id="btnResetEpisode">↺ Сброс раунда (Reset)</button>
@@ -183,11 +393,14 @@
             </div>
         </main>
     </div>
+    </div>
 
     <!-- Scripts -->
     <script src="neural-engine.js"></script>
     <script src="arena-physics.js"></script>
     <script src="visualizer.js"></script>
+    <script src="grand-arena.js"></script>
     <script src="app.js"></script>
+    <script src="main-menu.js"></script>
 </body>
 </html>

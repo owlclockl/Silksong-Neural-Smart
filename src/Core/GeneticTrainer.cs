@@ -151,5 +151,65 @@ namespace SilksongNeuralSmart.Core
             BestGenomeEver = new Genome(brain.Clone());
             Population[0] = new Genome(brain.Clone());
         }
+
+        /// <summary>
+        /// Возвращает геном со смещением относительно текущего.
+        /// Позволяет оценивать несколько геномов параллельно (несколько мобов в одной арене).
+        /// </summary>
+        public Genome GetGenomeOffset(int offset)
+        {
+            if (Population.Count == 0)
+                throw new InvalidOperationException("Population is empty.");
+
+            int idx = (CurrentGenomeIndex + offset) % Population.Count;
+            if (idx < 0) idx += Population.Count;
+            return Population[idx];
+        }
+
+        /// <summary>
+        /// Продвигает указатель популяции сразу на несколько геномов
+        /// (после эпизода, в котором параллельно оценивалось несколько особей).
+        /// </summary>
+        public bool AdvanceGenomes(int count)
+        {
+            bool evolved = false;
+            for (int i = 0; i < Math.Max(1, count); i++)
+            {
+                if (AdvanceToNextGenome())
+                    evolved = true;
+            }
+            return evolved;
+        }
+
+        /// <summary>
+        /// Восстанавливает тренера из сохранения отдельного режима:
+        /// лучший мозг становится элитой, остальная популяция засевается его мутациями.
+        /// </summary>
+        public void RestoreFromBrain(NeuralNetwork brain, int generation, float bestFitness, List<float>? fitnessHistory = null)
+        {
+            if (brain == null) return;
+
+            BestGenomeEver = new Genome(brain.Clone()) { Fitness = bestFitness };
+            BestFitnessEver = bestFitness;
+            Generation = Math.Max(1, generation);
+            CurrentGenomeIndex = 0;
+
+            Population.Clear();
+            Population.Add(new Genome(brain.Clone()));
+            Population.Add(new Genome(brain.Clone()));
+
+            while (Population.Count < PopulationSize)
+            {
+                var child = brain.Clone();
+                child.Mutate(Math.Max(0.02f, MutationRate), MutationStrength);
+                Population.Add(new Genome(child));
+            }
+
+            if (fitnessHistory != null)
+            {
+                FitnessHistory.Clear();
+                FitnessHistory.AddRange(fitnessHistory);
+            }
+        }
     }
 }

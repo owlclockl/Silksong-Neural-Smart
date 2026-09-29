@@ -355,3 +355,229 @@ button.danger:hover {
     font-size: 11px;
     border: 1px solid #3b475c;
 }
+
+/* =============================================================================
+   ЭКРАНЫ И ГЛАВНОЕ МЕНЮ (режимы: Великая Арена / Классическое додзё)
+   ============================================================================= */
+.screen { display: none; }
+.screen.active { display: block; }
+
+#menuScreen.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    position: relative;
+    overflow: hidden;
+}
+
+.menu-bg {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(900px 480px at 50% 12%, rgba(235, 47, 6, 0.16), transparent 70%),
+        radial-gradient(700px 420px at 15% 85%, rgba(75, 207, 250, 0.10), transparent 70%),
+        radial-gradient(700px 420px at 85% 85%, rgba(251, 197, 49, 0.08), transparent 70%);
+    pointer-events: none;
+}
+
+.menu-wrap {
+    position: relative;
+    width: min(980px, 94vw);
+    padding: 40px 32px 28px;
+    text-align: center;
+}
+
+.menu-logo {
+    width: 74px;
+    height: 74px;
+    margin: 0 auto 16px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, var(--accent-red), #e15f41);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 38px;
+    box-shadow: 0 0 40px rgba(235, 47, 6, 0.45);
+}
+
+.menu-title {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    background: linear-gradient(90deg, #fbc531, #f5f6fa 55%, #4bcffa);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+}
+
+.menu-sub {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-top: 6px;
+    margin-bottom: 30px;
+}
+
+.menu-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.menu-btn {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    text-align: left;
+    padding: 18px 22px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #131a26, #0e131c);
+    border: 1px solid var(--card-border);
+    cursor: pointer;
+    transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+
+.menu-btn:hover {
+    transform: translateY(-2px);
+    border-color: rgba(251, 197, 49, 0.55);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.55);
+}
+
+.menu-btn.primary {
+    border-color: rgba(251, 197, 49, 0.45);
+    background: linear-gradient(180deg, #1c1a12, #12131b);
+    box-shadow: 0 0 0 1px rgba(251, 197, 49, 0.08) inset;
+}
+
+.menu-btn-icon { font-size: 30px; }
+
+.menu-btn-text { display: flex; flex-direction: column; gap: 4px; }
+.menu-btn-text b { font-size: 15px; letter-spacing: 0.6px; color: var(--text-primary); }
+.menu-btn-text small { font-size: 12px; color: var(--text-muted); font-weight: 500; }
+
+.menu-slots {
+    display: none;
+    max-width: 780px;
+    margin: 22px auto 0;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 14px;
+    padding: 16px;
+    text-align: left;
+}
+
+.menu-slots.active { display: block; }
+
+.menu-slots-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: var(--accent-gold);
+    margin-bottom: 12px;
+}
+
+.link-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 12px;
+    padding: 2px 6px;
+}
+
+.link-btn:hover { color: var(--text-primary); }
+
+.slot-list { display: flex; flex-direction: column; gap: 10px; }
+
+.slot-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    background: #0b0f17;
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+}
+
+.slot-row.filled { border-color: rgba(75, 207, 250, 0.35); }
+
+.slot-info b { font-size: 13px; }
+.slot-info div { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+.slot-actions { display: flex; gap: 6px; }
+.slot-actions button { font-size: 11px; padding: 6px 10px; }
+
+.menu-params {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 10px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--card-border);
+}
+
+.menu-param {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.param-value {
+    min-width: 54px;
+    font-weight: 700;
+    color: var(--accent-gold) !important;
+    cursor: default;
+}
+
+.toggle-btn.active { background: rgba(76, 209, 55, 0.18) !important; color: var(--accent-green) !important; }
+
+.menu-footer {
+    margin-top: 26px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.menu-footer code {
+    background: #0b0f17;
+    border: 1px solid var(--card-border);
+    border-radius: 5px;
+    padding: 2px 6px;
+    font-size: 11px;
+}
+
+/* --------------------------------------------------- Экран Великой Арены */
+#grandCanvas {
+    width: 100%;
+    height: 520px;
+    background: #06080c;
+    border-radius: 8px;
+    border: 1px solid var(--card-border);
+    display: block;
+}
+
+.archetype-list { display: flex; flex-direction: column; gap: 8px; }
+
+.archetype-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    padding: 7px 10px;
+    background: #0b0f17;
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.archetype-row.active { border-color: rgba(251, 197, 49, 0.5); }
+.archetype-row .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+.archetype-row .meta { color: var(--text-muted); font-size: 11px; }

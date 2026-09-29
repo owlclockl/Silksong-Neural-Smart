@@ -18,6 +18,9 @@ namespace SilksongNeuralSmart.Agents
         public bool IsParrying { get; protected set; }
         public int FacingDirection { get; protected set; } = 1;
 
+        public DecodedAction LastAction { get; protected set; }
+        public DecodedAction LastRawAction { get; protected set; }
+
         public float TotalDamageDealt { get; set; }
         public float TotalDamageTaken { get; set; }
         public int SuccessfulDodges { get; set; }
@@ -27,6 +30,27 @@ namespace SilksongNeuralSmart.Agents
         protected Rigidbody2D _rb2d = null!;
 
         public abstract string ArchetypeName { get; }
+
+        /// <summary>Летающие архетипы игнорируют гравитацию в автономных тренировочных аренах.</summary>
+        public virtual bool IsFlyingArchetype => false;
+
+        /// <summary>Габариты агента для собственной физики тренировочных арен (в юнитах Unity).</summary>
+        public virtual Vector2 ColliderSize => new Vector2(1.1f, 1.7f);
+
+        /// <summary>
+        /// Применяет результат собственной физики арены (используется режимом "Великая Арена",
+        /// где агенты живут в виртуальной арене без Rigidbody2D игры).
+        /// </summary>
+        public void SetKinematicState(Vector2 position, Vector2 velocity, bool grounded)
+        {
+            transform.position = position;
+            Velocity = velocity;
+            IsGrounded = grounded;
+            if (_rb2d != null) _rb2d.velocity = velocity;
+        }
+
+        /// <summary>Внешняя установка цели наблюдения без обращения к приватным полям.</summary>
+        public Transform CurrentTarget => _targetTransform;
 
         protected virtual void Awake()
         {
@@ -114,9 +138,18 @@ namespace SilksongNeuralSmart.Agents
 
         public virtual DecodedAction StepDecision(float deltaTime)
         {
+            return StepDecision(CollectSensors(), deltaTime);
+        }
+
+        /// <summary>
+        /// Шаг принятия решения с готовым набором сенсоров.
+        /// Используется автономными аренами (режим "Великая Арена"), которые
+        /// считают лучи и окружение самостоятельно.
+        /// </summary>
+        public virtual DecodedAction StepDecision(SensorData rawSensor, float deltaTime)
+        {
             Balancer.Update(deltaTime);
 
-            var rawSensor = CollectSensors();
             float[] obs = ObservationSensor.EncodeObservation(rawSensor);
 
             // Time-buffer for balanced human reaction latency
@@ -129,6 +162,8 @@ namespace SilksongNeuralSmart.Agents
 
             // Filter with balancing rules
             DecodedAction finalAction = Balancer.FilterAction(rawAction);
+            LastRawAction = rawAction;
+            LastAction = finalAction;
             ExecuteAction(finalAction, deltaTime);
 
             return finalAction;

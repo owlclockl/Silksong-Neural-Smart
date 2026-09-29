@@ -43,6 +43,11 @@ namespace SilksongNeuralSmart.UI
         private void OnGUI()
         {
             if (!Visible) return;
+
+            // Внутри отдельного режима "Великая Арена" работает только его собственный интерфейс
+            var grandArena = GrandArenaMode.Instance;
+            if (grandArena != null && grandArena.IsActive) return;
+
             InitStyles();
 
             _windowRect = GUI.Window(9876, _windowRect, DrawMainWindow, "SILKSONG NEURAL SMART - DOJO");

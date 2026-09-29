@@ -10,6 +10,8 @@ namespace SilksongNeuralSmart.Agents.Archetypes
 
         public bool IsShieldRaised { get; private set; }
 
+        public override Vector2 ColliderSize => new Vector2(1.4f, 2.0f);
+
         protected override void Awake()
         {
             MaxHealth = 130f;

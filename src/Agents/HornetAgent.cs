@@ -20,6 +20,9 @@ namespace SilksongNeuralSmart.Agents
         public bool IsHealing { get; set; }
         public int FacingDirection { get; set; } = 1;
 
+        public DecodedAction LastAction { get; private set; }
+        public DecodedAction LastRawAction { get; private set; }
+
         public float TotalDamageDealt { get; set; }
         public float TotalDamageTaken { get; set; }
         public int SuccessfulPogos { get; set; }
@@ -28,6 +31,31 @@ namespace SilksongNeuralSmart.Agents
 
         public Transform TargetEnemy { get; set; } = null!;
         private Rigidbody2D _rb2d = null!;
+
+        /// <summary>Габариты Хорнет для собственной физики тренировочных арен.</summary>
+        public Vector2 ColliderSize { get; } = new Vector2(1.1f, 1.8f);
+
+        /// <summary>
+        /// Применяет результат собственной физики арены (режим "Великая Арена").
+        /// </summary>
+        public void SetKinematicState(Vector2 position, Vector2 velocity, bool grounded)
+        {
+            transform.position = position;
+            Velocity = velocity;
+            IsGrounded = grounded;
+            if (_rb2d != null) _rb2d.velocity = velocity;
+        }
+
+        /// <summary>
+        /// Выполняет действие, пришедшее извне (ручное управление игроком в отдельном режиме).
+        /// </summary>
+        public void ApplyExternalAction(DecodedAction action, float deltaTime)
+        {
+            Balancer.Update(deltaTime);
+            LastAction = action;
+            LastRawAction = action;
+            ExecuteHornetAction(action, deltaTime);
+        }
 
         private void Awake()
         {
@@ -111,9 +139,16 @@ namespace SilksongNeuralSmart.Agents
 
         public DecodedAction StepDecision(float deltaTime)
         {
+            return StepDecision(CollectSensors(), deltaTime);
+        }
+
+        /// <summary>
+        /// Шаг принятия решения с готовым набором сенсоров (автономные арены).
+        /// </summary>
+        public DecodedAction StepDecision(SensorData sensorData, float deltaTime)
+        {
             Balancer.Update(deltaTime);
 
-            var sensorData = CollectSensors();
             float[] obs = ObservationSensor.EncodeObservation(sensorData);
 
             Balancer.PushObservation(obs, Time.time);
@@ -123,6 +158,8 @@ namespace SilksongNeuralSmart.Agents
             DecodedAction rawAction = ActionDecoders.Decode(actionLogits);
 
             DecodedAction finalAction = Balancer.FilterAction(rawAction);
+            LastRawAction = rawAction;
+            LastAction = finalAction;
             ExecuteHornetAction(finalAction, deltaTime);
 
             return finalAction;

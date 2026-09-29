@@ -26,6 +26,20 @@ namespace SilksongNeuralSmart.Config
         public ConfigEntry<float> MutationStrength { get; private set; } = null!;
         public ConfigEntry<float> TimeScaleMultiplier { get; private set; } = null!;
 
+        // Grand Arena (отдельный режим: мобы + Хорнет на одной большой арене)
+        public ConfigEntry<bool> EnableMainMenuButton { get; private set; } = null!;
+        public ConfigEntry<bool> AlwaysShowMainMenuButton { get; private set; } = null!;
+        public ConfigEntry<string> MainMenuSceneKeywords { get; private set; } = null!;
+        public ConfigEntry<KeyCode> GrandArenaMenuKey { get; private set; } = null!;
+        public ConfigEntry<KeyCode> GrandArenaQuickSaveKey { get; private set; } = null!;
+        public ConfigEntry<int> GrandArenaDefaultSlot { get; private set; } = null!;
+        public ConfigEntry<int> GrandArenaMobCount { get; private set; } = null!;
+        public ConfigEntry<float> GrandArenaEpisodeDuration { get; private set; } = null!;
+        public ConfigEntry<int> GrandArenaAutoSaveEpisodes { get; private set; } = null!;
+        public ConfigEntry<bool> GrandArenaWaveScaling { get; private set; } = null!;
+        public ConfigEntry<bool> GrandArenaBalancePackDamage { get; private set; } = null!;
+        public ConfigEntry<float> GrandArenaTimeScale { get; private set; } = null!;
+
         // Visuals & HUD
         public ConfigEntry<bool> ShowTrainingHUD { get; private set; } = null!;
         public ConfigEntry<bool> ShowNeuralVisualizer { get; private set; } = null!;
@@ -53,6 +67,32 @@ namespace SilksongNeuralSmart.Config
             MutationRate = config.Bind("Training", "MutationRate", 0.08f, "Probability of weight mutations per generation.");
             MutationStrength = config.Bind("Training", "MutationStrength", 0.25f, "Magnitude of weight mutations.");
             TimeScaleMultiplier = config.Bind("Training", "TimeScaleMultiplier", 1.0f, "Current training time scale.");
+
+            // Grand Arena — отдельный режим с кнопкой в главном меню
+            EnableMainMenuButton = config.Bind("GrandArena", "EnableMainMenuButton", true,
+                "Показывать кнопку 'НЕЙРО-АРЕНА' в главном меню игры (запуск отдельного режима обучения).");
+            AlwaysShowMainMenuButton = config.Bind("GrandArena", "AlwaysShowMainMenuButton", false,
+                "Показывать кнопку режима всегда, а не только в главном меню (полезно, если название сцены меню не распознано).");
+            MainMenuSceneKeywords = config.Bind("GrandArena", "MainMenuSceneKeywords", "menu,title,start,intro,logo,quit",
+                "Ключевые слова названий сцен главного меню (через запятую) для показа кнопки режима.");
+            GrandArenaMenuKey = config.Bind("GrandArena", "GrandArenaMenuKey", KeyCode.F6,
+                "Клавиша открытия меню режима 'Великая Арена' / показа-скрытия его интерфейса.");
+            GrandArenaQuickSaveKey = config.Bind("GrandArena", "GrandArenaQuickSaveKey", KeyCode.F5,
+                "Клавиша быстрого сохранения прогресса режима в активный слот.");
+            GrandArenaDefaultSlot = config.Bind("GrandArena", "GrandArenaDefaultSlot", 1,
+                "Слот сохранения режима по умолчанию (1-3).");
+            GrandArenaMobCount = config.Bind("GrandArena", "GrandArenaMobCount", 4,
+                "Сколько мобов обучается одновременно вместе с Хорнет на большой арене (1-8).");
+            GrandArenaEpisodeDuration = config.Bind("GrandArena", "GrandArenaEpisodeDuration", 60f,
+                "Максимальная длительность одного раунда обучения в режиме 'Великая Арена', секунды.");
+            GrandArenaAutoSaveEpisodes = config.Bind("GrandArena", "GrandArenaAutoSaveEpisodes", 5,
+                "Автосохранение слота каждые N эпизодов (0 — выключить автосохранение).");
+            GrandArenaWaveScaling = config.Bind("GrandArena", "GrandArenaWaveScaling", true,
+                "Увеличивать стаю мобов по мере побед Хорнет (система волн).");
+            GrandArenaBalancePackDamage = config.Bind("GrandArena", "GrandArenaBalancePackDamage", true,
+                "Честный баланс: суммарный урон стаи масштабируется по её численности.");
+            GrandArenaTimeScale = config.Bind("GrandArena", "GrandArenaTimeScale", 1.0f,
+                "Стартовое ускорение симуляции в режиме 'Великая Арена' (1-50).");
 
             // Visuals
             ShowTrainingHUD = config.Bind("Visuals", "ShowTrainingHUD", true, "Show the training statistics and control HUD.");
