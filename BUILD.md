@@ -167,6 +167,8 @@ node web/server.js
 
 | Симптом | Решение |
 |---|---|
+| **Окно `build.bat` открылось и мгновенно закрылось, ничего не собрав** | Файл повреждён переносами строк LF (Unix) — cmd.exe такой батник не выполняет. Скачайте файл заново из репозитория (он хранится с CRLF благодаря `.gitattributes`) либо в Notepad++ / VS Code переключите «End of Line» на **CRLF** и сохраните. Проверить причину можно так: откройте `cmd`, перейдите в папку мода (`cd /d C:\путь\к\моду`) и запустите `build.bat` оттуда — окно не закроется, и будет видно сообщение об ошибке |
+| Окно закрывается сразу, но EOL уже CRLF | Запустите из `cmd` вручную (см. выше) либо `build.bat --log` — полный вывод сборки попадёт в `build.log` рядом со скриптом |
 | `dotnet` не найден | Установите .NET SDK и перезапустите терминал |
 | `Unable to load the service index for source https://nuget.bepinex.dev/...` | Нет интернета или фид недоступен: соберите с указанием игры (`--game`), тогда пакеты BepInEx не нужны |
 | `MSB3644: Reference assemblies for .NETFramework,Version=v4.7.2 were not found` | Восстановите пакеты (`--clean`), пакет `Microsoft.NETFramework.ReferenceAssemblies` подтянется сам |
