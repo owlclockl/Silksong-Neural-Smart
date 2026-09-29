@@ -227,6 +227,13 @@ window.addEventListener('DOMContentLoaded', () => {
         const dt = Math.min(0.1, (currentTime - lastTime) / 1000.0);
         lastTime = currentTime;
 
+        // Пока активен другой экран (главное меню или Великая Арена) —
+        // классическое додзё не считает и не рисует, чтобы не есть кадры.
+        if (window.SNS_ACTIVE_SCREEN && window.SNS_ACTIVE_SCREEN !== 'classic') {
+            requestAnimationFrame(mainLoop);
+            return;
+        }
+
         // Run sub-steps based on timeScale
         if (arena.isTrainingActive) {
             const steps = Math.ceil(arena.timeScale);

@@ -21,11 +21,33 @@ namespace SilksongNeuralSmart.Training
         public Vector2 BoundsMax { get; set; }
         public Vector2 HornetSpawnPoint { get; set; }
         public Vector2 MobSpawnPoint { get; set; }
+
+        /// <summary>
+        /// Точки спавна для мульти-моб режима (Великая Арена). Для обычных комнат содержит одну точку.
+        /// </summary>
+        public List<Vector2> MobSpawnPoints { get; set; } = new List<Vector2>();
+
+        /// <summary>
+        /// Помечает большую арену режима "Великая Арена" (обучение всех мобов и Хорнет одновременно).
+        /// </summary>
+        public bool IsGrandArena { get; set; }
+
         public List<PlatformBox> Platforms { get; set; } = new List<PlatformBox>();
+
+        public Vector2 GetMobSpawn(int index)
+        {
+            if (MobSpawnPoints == null || MobSpawnPoints.Count == 0)
+                return MobSpawnPoint;
+
+            return MobSpawnPoints[((index % MobSpawnPoints.Count) + MobSpawnPoints.Count) % MobSpawnPoints.Count];
+        }
     }
 
     public static class RoomLayouts
     {
+        /// <summary>Идентификатор большой арены отдельного режима обучения.</summary>
+        public const int GRAND_ARENA_ROOM_ID = 4;
+
         public static TrainingRoom CreateRoom(int roomId)
         {
             switch (roomId)
@@ -36,6 +58,8 @@ namespace SilksongNeuralSmart.Training
                     return CreateVerticalChasm();
                 case 3:
                     return CreateCitadelTrial();
+                case GRAND_ARENA_ROOM_ID:
+                    return CreateGrandArena();
                 default:
                     return CreateMossDojo();
             }
@@ -63,6 +87,7 @@ namespace SilksongNeuralSmart.Training
             room.Platforms.Add(new PlatformBox { Center = new Vector2(-7f, 3.5f), Size = new Vector2(6f, 0.8f), IsPassThrough = true });
             room.Platforms.Add(new PlatformBox { Center = new Vector2(7f, 3.5f), Size = new Vector2(6f, 0.8f), IsPassThrough = true });
 
+            room.MobSpawnPoints.Add(room.MobSpawnPoint);
             return room;
         }
 
@@ -93,6 +118,7 @@ namespace SilksongNeuralSmart.Training
             room.Platforms.Add(new PlatformBox { Center = new Vector2(5f, 7f), Size = new Vector2(5f, 0.8f), IsPassThrough = true });
             room.Platforms.Add(new PlatformBox { Center = new Vector2(0f, 11f), Size = new Vector2(6f, 0.8f), IsPassThrough = true });
 
+            room.MobSpawnPoints.Add(room.MobSpawnPoint);
             return room;
         }
 
@@ -117,6 +143,73 @@ namespace SilksongNeuralSmart.Training
             room.Platforms.Add(new PlatformBox { Center = new Vector2(-4f, 2f), Size = new Vector2(2f, 4f), IsHazard = false });
             room.Platforms.Add(new PlatformBox { Center = new Vector2(4f, 2f), Size = new Vector2(2f, 4f), IsHazard = false });
             room.Platforms.Add(new PlatformBox { Center = new Vector2(0f, 6f), Size = new Vector2(8f, 0.8f), IsPassThrough = true });
+
+            room.MobSpawnPoints.Add(room.MobSpawnPoint);
+            return room;
+        }
+        /// <summary>
+        /// ВЕЛИКАЯ АРЕНА (Grand Arena) — огромная общая арена отдельного режима обучения,
+        /// где одновременно тренируются все архетипы мобов И Хорнет.
+        /// </summary>
+        private static TrainingRoom CreateGrandArena()
+        {
+            var room = new TrainingRoom
+            {
+                RoomId = GRAND_ARENA_ROOM_ID,
+                IsGrandArena = true,
+                Name = "ВЕЛИКАЯ АРЕНА ФАРЛУМА (Grand Neural Arena)",
+                Description = "Огромная многоуровневая арена для одновременного обучения Хорнет и всей стаи мобов: " +
+                              "широкий пол, боковые ямы с шипами, колонны, ярусные платформы и высокие балконы.",
+                BoundsMin = new Vector2(-40f, -6f),
+                BoundsMax = new Vector2(40f, 26f),
+                HornetSpawnPoint = new Vector2(0f, 2f),
+                MobSpawnPoint = new Vector2(16f, 2f)
+            };
+
+            // --- Основной пол (три секции с ямами шипов между ними) ---
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(-26f, -1f), Size = new Vector2(24f, 2f) });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(0f, -1f), Size = new Vector2(20f, 2f) });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(26f, -1f), Size = new Vector2(24f, 2f) });
+
+            // Ямы с шипами между секциями пола
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(-14f, -2.6f), Size = new Vector2(4f, 1.2f), IsHazard = true });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(14f, -2.6f), Size = new Vector2(4f, 1.2f), IsHazard = true });
+
+            // --- Стены и потолок ---
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(-40f, 10f), Size = new Vector2(2f, 34f) });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(40f, 10f), Size = new Vector2(2f, 34f) });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(0f, 26f), Size = new Vector2(82f, 2f) });
+
+            // --- Первый ярус платформ ---
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(-28f, 5f), Size = new Vector2(10f, 0.8f), IsPassThrough = true });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(-10f, 6.5f), Size = new Vector2(8f, 0.8f), IsPassThrough = true });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(10f, 6.5f), Size = new Vector2(8f, 0.8f), IsPassThrough = true });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(28f, 5f), Size = new Vector2(10f, 0.8f), IsPassThrough = true });
+
+            // --- Второй ярус / балконы ---
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(-19f, 12f), Size = new Vector2(9f, 0.8f), IsPassThrough = true });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(0f, 13.5f), Size = new Vector2(12f, 0.8f), IsPassThrough = true });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(19f, 12f), Size = new Vector2(9f, 0.8f), IsPassThrough = true });
+
+            // --- Верхние насесты для летающих охотников ---
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(-30f, 18f), Size = new Vector2(8f, 0.8f), IsPassThrough = true });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(30f, 18f), Size = new Vector2(8f, 0.8f), IsPassThrough = true });
+
+            // --- Колонны цитадели (укрытия и блокировка линий атаки) ---
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(-6f, 1.6f), Size = new Vector2(1.6f, 3.2f) });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(6f, 1.6f), Size = new Vector2(1.6f, 3.2f) });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(-22f, 1.6f), Size = new Vector2(1.6f, 3.2f) });
+            room.Platforms.Add(new PlatformBox { Center = new Vector2(22f, 1.6f), Size = new Vector2(1.6f, 3.2f) });
+
+            // --- Точки спавна стаи мобов (до 8 одновременно) ---
+            room.MobSpawnPoints.Add(new Vector2(-30f, 1f));
+            room.MobSpawnPoints.Add(new Vector2(30f, 1f));
+            room.MobSpawnPoints.Add(new Vector2(-10f, 8f));
+            room.MobSpawnPoints.Add(new Vector2(10f, 8f));
+            room.MobSpawnPoints.Add(new Vector2(-19f, 13.5f));
+            room.MobSpawnPoints.Add(new Vector2(19f, 13.5f));
+            room.MobSpawnPoints.Add(new Vector2(-34f, 1f));
+            room.MobSpawnPoints.Add(new Vector2(34f, 1f));
 
             return room;
         }
