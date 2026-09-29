@@ -4,7 +4,7 @@
     <!--
       Silksong собран на Unity Mono (BepInEx 5) -> целевой фреймворк net472.
       Для BepInEx 6 / IL2CPP соберите с параметром: -p:TargetFramework=netstandard2.1
-      (или запустите build.bat с ключом --il2cpp)
+      (или запустите build.bat с ключом il2cpp / -il2cpp)
     -->
     <TargetFramework Condition="'$(TargetFramework)' == ''">net472</TargetFramework>
     <AssemblyName>SilksongNeuralSmart</AssemblyName>
