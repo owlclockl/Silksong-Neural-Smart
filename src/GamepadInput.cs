@@ -360,7 +360,7 @@ namespace RosaryShare
         private static bool ReadInControl(bool full)
         {
             if (!ResolveInControl()) return false;
-            if (_inControlFailures > 5) return false;
+            if (_inControlFailures > 20) return false;
 
             try
             {
@@ -380,6 +380,8 @@ namespace RosaryShare
 
                     Held[i] = ControlPressed(device, ControlIds[i]);
                 }
+
+                _inControlFailures = 0;
 
                 if (full && _axisLeftStickX != null && _axisLeftStickY != null)
                 {

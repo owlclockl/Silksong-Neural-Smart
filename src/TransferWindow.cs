@@ -88,6 +88,7 @@ namespace RosaryShare
         private void Update()
         {
             GamepadInput.Tick(_open);
+            GameBridge.TickInputBlock();
 
             bool toggleByKey = Input.GetKeyDown(ModConfig.MenuKeyCode);
             bool toggleByPad = ModConfig.MenuCombo != null && ModConfig.MenuCombo.Triggered();
@@ -107,7 +108,6 @@ namespace RosaryShare
                 return;
             }
 
-            GameBridge.TickInputBlock();
             TrackPointer();
             HandleMenuInput();
 

@@ -113,6 +113,7 @@ namespace RosaryShare
         private static MethodInfo _startAcceptingInput;
         private static bool _inputBlocked;
         private static float _reassertAt;
+        private static float _unblockRetryUntil;
 
         /// <summary>Заблокирован ли сейчас игровой ввод нашим меню.</summary>
         public static bool InputBlocked
@@ -129,10 +130,19 @@ namespace RosaryShare
             if (_inputBlocked == blocked) return;
             _inputBlocked = blocked;
 
-            if (!ApplyInputBlock(blocked))
-                _inputBlocked = false;
-            else
+            if (ApplyInputBlock(blocked))
+            {
                 _reassertAt = Time.unscaledTime + 0.5f;
+                _unblockRetryUntil = 0f;
+                return;
+            }
+
+            _inputBlocked = false;
+
+            // если снять блокировку не удалось (сменилась сцена, объект пересоздан),
+            // будем пытаться ещё несколько секунд: игрок не должен остаться без управления
+            if (!blocked)
+                _unblockRetryUntil = Time.unscaledTime + 5f;
         }
 
         /// <summary>
@@ -141,9 +151,23 @@ namespace RosaryShare
         /// </summary>
         public static void TickInputBlock()
         {
-            if (!_inputBlocked) return;
-            if (Time.unscaledTime < _reassertAt) return;
-            _reassertAt = Time.unscaledTime + 0.5f;
+            float now = Time.unscaledTime;
+
+            if (!_inputBlocked)
+            {
+                if (_unblockRetryUntil > 0f && now < _unblockRetryUntil)
+                {
+                    if (ApplyInputBlock(false)) _unblockRetryUntil = 0f;
+                }
+                else if (_unblockRetryUntil > 0f)
+                {
+                    _unblockRetryUntil = 0f;
+                }
+                return;
+            }
+
+            if (now < _reassertAt) return;
+            _reassertAt = now + 0.5f;
             ApplyInputBlock(true);
         }
 
