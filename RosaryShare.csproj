@@ -1,0 +1,124 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>RosaryShare</AssemblyName>
+    <Product>RosaryShare</Product>
+    <Description>RosaryShare — передача бусин между игроками для мода Silksong Multiplayer (XvX)</Description>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>RosaryShare</RootNamespace>
+    <AssemblyTitle>RosaryShare</AssemblyTitle>
+    <DebugType>portable</DebugType>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <NoWarn>$(NoWarn);CS0649;CS0414;MSB3277;NETSDK1138</NoWarn>
+  </PropertyGroup>
+
+  <!-- Исходники стабов компилируются только в своих проектах refs/*/ -->
+  <ItemGroup>
+    <Compile Remove="refs/**/*.cs" />
+  </ItemGroup>
+
+  <!--
+    ================================================================
+    АВТОПОИСК УСТАНОВЛЕННОЙ ИГРЫ
+    Если Silksong найден, сборка идёт против реальных сборок игры и BepInEx
+    (самый надёжный путь, интернет не нужен).
+    Путь можно задать вручную:  -p:SilksongPath="D:\Games\Hollow Knight Silksong"
+    или переменной окружения SILKSONG_PATH.
+
+    Если игры нет — сборка идёт против NuGet (BepInEx.Core + UnityEngine.Modules)
+    и локальных справочных стабов refs/ (Assembly-CSharp, Steamworks.NET),
+    чьи сигнатуры повторяют настоящие сборки игры. Стабы в мод НЕ попадают.
+    ================================================================
+  -->
+  <PropertyGroup Label="SilksongDetection">
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND '$(SILKSONG_PATH)' != ''">$(SILKSONG_PATH)</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('C:\Program Files (x86)\Steam\steamapps\common\Hollow Knight Silksong')">C:\Program Files (x86)\Steam\steamapps\common\Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('C:\Program Files\Steam\steamapps\common\Hollow Knight Silksong')">C:\Program Files\Steam\steamapps\common\Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('D:\SteamLibrary\steamapps\common\Hollow Knight Silksong')">D:\SteamLibrary\steamapps\common\Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('E:\SteamLibrary\steamapps\common\Hollow Knight Silksong')">E:\SteamLibrary\steamapps\common\Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('$(HOME)/.steam/steam/steamapps/common/Hollow Knight Silksong')">$(HOME)/.steam/steam/steamapps/common/Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('$(HOME)/.local/share/Steam/steamapps/common/Hollow Knight Silksong')">$(HOME)/.local/share/Steam/steamapps/common/Hollow Knight Silksong</SilksongPath>
+
+    <SilksongManagedPath Condition="'$(SilksongManagedPath)' == '' AND '$(SilksongPath)' != ''">$(SilksongPath)/Hollow Knight Silksong_Data/Managed</SilksongManagedPath>
+    <SilksongBepInExCore Condition="'$(SilksongBepInExCore)' == '' AND '$(SilksongPath)' != ''">$(SilksongPath)/BepInEx/core</SilksongBepInExCore>
+
+    <UseGameReferences Condition="'$(UseGameReferences)' == '' AND Exists('$(SilksongManagedPath)/Assembly-CSharp.dll') AND Exists('$(SilksongManagedPath)/com.rlabrecque.steamworks.net.dll') AND Exists('$(SilksongManagedPath)/UnityEngine.CoreModule.dll') AND Exists('$(SilksongBepInExCore)/BepInEx.dll')">true</UseGameReferences>
+  </PropertyGroup>
+
+  <Target Name="ReportReferenceMode" BeforeTargets="BeforeBuild">
+    <Message Importance="high" Condition="'$(UseGameReferences)' == 'true'" Text="[RosaryShare] Сборка против локальных сборок игры: $(SilksongPath)" />
+    <Message Importance="high" Condition="'$(UseGameReferences)' != 'true'" Text="[RosaryShare] Игра не найдена — сборка против NuGet и справочных стабов refs/." />
+  </Target>
+
+  <!-- ================= Реальные сборки игры (предпочтительно) ================= -->
+  <ItemGroup Condition="'$(UseGameReferences)' == 'true'">
+    <Reference Include="BepInEx">
+      <HintPath>$(SilksongBepInExCore)/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(SilksongManagedPath)/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="com.rlabrecque.steamworks.net">
+      <HintPath>$(SilksongManagedPath)/com.rlabrecque.steamworks.net.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- ============ Без игры: NuGet (Unity) + файловый BepInEx + стабы ============ -->
+  <!--
+    BepInEx 5.x нет ни на nuget.org, ни на nuget.bepinex.dev (там только 6.x-be),
+    поэтому в режиме без игры BepInEx.dll кладётся в lib/BepInEx/ —
+    локально вручную, а в CI — автоматической распаковкой официального zip
+    BepInEx_win_x64_5.4.23.4.zip из релизов GitHub (см. .github/workflows/build.yml).
+  -->
+  <PropertyGroup Label="BepInExBootstrap" Condition="'$(UseGameReferences)' != 'true'">
+    <BepInExBootstrapDir Condition="'$(BepInExBootstrapDir)' == ''">$(MSBuildThisFileDirectory)lib/BepInEx</BepInExBootstrapDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(UseGameReferences)' != 'true'">
+    <PackageReference Include="UnityEngine.Modules" Version="6000.0.50" IncludeAssets="compile" PrivateAssets="all" />
+
+    <Reference Include="BepInEx" Condition="Exists('$(BepInExBootstrapDir)/BepInEx.dll')">
+      <HintPath>$(BepInExBootstrapDir)/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <ProjectReference Include="refs/GameStubs/GameStubs.csproj" Private="false" />
+    <ProjectReference Include="refs/SteamworksStubs/SteamworksStubs.csproj" Private="false" />
+  </ItemGroup>
+
+  <Target Name="RequireBepInExBootstrap" BeforeTargets="BeforeBuild"
+          Condition="'$(UseGameReferences)' != 'true' AND !Exists('$(BepInExBootstrapDir)/BepInEx.dll')">
+    <Error Text="[RosaryShare] Нет ни игры, ни lib/BepInEx/BepInEx.dll. Скачайте https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.4 и распакуйте файл BepInEx/core/BepInEx.dll из архива BepInEx_win_x64_5.4.23.4.zip в папку lib/BepInEx/, либо укажите путь к игре: -p:SilksongPath=..." />
+  </Target>
+
+  <ItemGroup Condition="'$(TargetFramework.TrimEnd(`0123456789`))' == 'net'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    СПРАВОЧНЫЙ СТАБ игровой сборки Assembly-CSharp.
+    Содержит ТОЛЬКО сигнатуры тех типов Hollow Knight: Silksong, которые
+    использует RosaryShare (скопированы по декомпилу игры). Тела пустые:
+    эта dll никогда не упаковывается в мод и не загружается игрой —
+    во время выполнения Unity поднимает настоящий Assembly-CSharp,
+    а Mono привязывает ссылки по простому имени сборки.
+    Собирается только когда папка с игрой не найдена (без указания пути к игре).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>Assembly-CSharp</AssemblyName>
+    <RootNamespace></RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <NoWarn>$(NoWarn);CS0067;CS0649;CS0414;CS0069</NoWarn>
+  </PropertyGroup>
+
+</Project>

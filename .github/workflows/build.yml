@@ -1,0 +1,96 @@
+name: Build RosaryShare
+
+on:
+  push:
+    branches: ["main", "arena/*", "feature/*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Fetch BepInEx 5 reference assembly
+        shell: pwsh
+        run: |
+          # BepInEx 5.x отсутствует на NuGet — берём официальный релизный zip
+          # из GitHub и достаём из него BepInEx/core/BepInEx.dll в lib/BepInEx/.
+          $zip = "$env:TEMP/bepinex.zip"
+          Invoke-WebRequest -Uri "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.4/BepInEx_win_x64_5.4.23.4.zip" -OutFile $zip
+          $dest = "$env:TEMP/bepinex"
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+          New-Item -ItemType Directory -Force -Path "lib/BepInEx" | Out-Null
+          Copy-Item "$dest/BepInEx/core/BepInEx.dll" "lib/BepInEx/BepInEx.dll"
+          Write-Host "BepInEx reference ready: " (Get-Item lib/BepInEx/BepInEx.dll).Length "bytes"
+
+      - name: Restore
+        shell: pwsh
+        run: |
+          dotnet restore RosaryShare.csproj --nologo 2>&1 | Tee-Object restore-ci.log
+          exit $LASTEXITCODE
+
+      - name: Build (Release)
+        shell: pwsh
+        run: |
+          dotnet build RosaryShare.csproj -c Release --no-restore --nologo -v minimal 2>&1 | Tee-Object build-ci.log
+          exit $LASTEXITCODE
+
+      - name: Report failure as commit comment
+        if: failure()
+        continue-on-error: true
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tail = ""
+          foreach ($f in @("restore-ci.log", "build-ci.log")) {
+            if (Test-Path $f) { $tail += "### $f`n" + ((Get-Content $f -Tail 300) -join "`n") + "`n`n" }
+          }
+          if ($tail.Length -gt 60000) { $tail = $tail.Substring($tail.Length - 60000) }
+          $body = "CI build failed for ${{ github.sha }}`n`n``````" + "`n" + $tail + "`n``````"
+          [System.IO.File]::WriteAllText("ci-report.md", $body)
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@ci-report.md
+
+      - name: Package
+        if: success()
+        shell: pwsh
+        run: |
+          $pkg = "dist/BepInEx/plugins/RosaryShare"
+          New-Item -ItemType Directory -Force -Path $pkg | Out-Null
+          Copy-Item "bin/Release/netstandard2.1/RosaryShare.dll" "$pkg/"
+          foreach ($doc in @("README.md", "MANUAL_RU.md", "INSTALL.txt")) {
+            if (Test-Path $doc) { Copy-Item $doc "$pkg/" }
+          }
+          Compress-Archive -Path "dist/BepInEx" -DestinationPath "dist/RosaryShare.zip" -Force
+
+      - name: Upload artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: RosaryShare-dll
+          path: dist/
+          retention-days: 30
+
+      - name: Assembly references sanity check
+        if: success()
+        shell: pwsh
+        run: |
+          # Мод ОБЯЗАН ссылаться на сборку с именем com.rlabrecque.steamworks.net
+          # и Assembly-CSharp — иначе в игре будет TypeLoadException.
+          $bytes = [System.IO.File]::ReadAllBytes("bin/Release/netstandard2.1/RosaryShare.dll")
+          $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text -notmatch "com\.rlabrecque\.steamworks\.net") { throw "Reference com.rlabrecque.steamworks.net is missing!" }
+          if ($text -notmatch "Assembly-CSharp") { throw "Reference Assembly-CSharp is missing!" }
+          Write-Host "Reference check OK"
