@@ -110,5 +110,93 @@ namespace RosaryShare
         {
             get { return T("В лобби: {0} чел.", "In lobby: {0}"); }
         }
+
+        // ---- Меню в стиле игры ----
+
+        /// <summary>Заголовок меню (выводится вразрядку заглавными).</summary>
+        public static string MenuTitle
+        {
+            get { return T("ОБМЕН БУСИНАМИ", "BEAD SHARING"); }
+        }
+
+        public static string MenuSubtitle
+        {
+            get { return T("Розарий странников", "Rosary of the wanderers"); }
+        }
+
+        public static string SendVerb
+        {
+            get { return T("Передать", "Bestow"); }
+        }
+
+        public static string SendFormat
+        {
+            get { return T("Передать {0} → {1}", "Bestow {0} → {1}"); }
+        }
+
+        public static string ChoosePrompt
+        {
+            get { return T("Выберите игрока и сумму", "Choose a player and an amount"); }
+        }
+
+        public static string CustomAmount
+        {
+            get { return T("Своё", "Custom"); }
+        }
+
+        public static string AvailableFormat
+        {
+            get { return T("Доступно: {0}", "Available: {0}"); }
+        }
+
+        public static string PendingFormat
+        {
+            get { return T("в пути: {0}", "pending: {0}"); }
+        }
+
+        public static string EmptyJournal
+        {
+            get { return T("Переводов ещё не было", "No transfers yet"); }
+        }
+
+        public static string HintSelect
+        {
+            get { return T("Выбор", "Select"); }
+        }
+
+        public static string HintConfirm
+        {
+            get { return T("Выбрать", "Choose"); }
+        }
+
+        public static string HintClose
+        {
+            get { return T("Закрыть", "Close"); }
+        }
+
+        public static string HintAmount
+        {
+            get { return T("Сумма", "Amount"); }
+        }
+
+        public static string HintJournal
+        {
+            get { return T("Журнал", "Journal"); }
+        }
+
+        public static string HintQuickSend
+        {
+            get { return T("Быстрая отправка", "Quick send"); }
+        }
+
+        public static string HintOpen
+        {
+            get { return T("Открыть окно", "Open the window"); }
+        }
+
+        public static string GamepadReady
+        {
+            get { return T("Геймпад подключён", "Gamepad connected"); }
+        }
     }
 }
