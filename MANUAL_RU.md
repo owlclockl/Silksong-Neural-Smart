@@ -136,6 +136,7 @@ RosaryShare следит, чтобы бусины не пропадали:
 | Параметр | По умолчанию | Описание |
 |---|---|---|
 | `[Interface] Language` | `Auto` | Язык: `Auto`, `Russian` или `English`. |
+| `[Interface] Inventory Integration` | `true` | Показывать вкладку «Обмен» в открытом меню предметов/карты. |
 | `[Interface] Show Toasts` | `true` | Всплывающие уведомления о переводах. |
 | `[Interface] UI Scale` | `1.0` | Дополнительный масштаб окна поверх автоматического. |
 | `[Interface] Serif Font` | `true` | Системный шрифт с засечками в духе игры. |

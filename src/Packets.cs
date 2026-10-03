@@ -10,6 +10,7 @@ namespace RosaryShare
         Ack = 1,      // txId
         Reject = 2,   // txId, reasonCode
         Hello = 3,    // name (периодический анонс для красивых имён в списке)
+        TransferShards = 4, // txId, amount, senderName
     }
 
     /// <summary>
@@ -27,9 +28,9 @@ namespace RosaryShare
 
         // ---------------- Сериализация ----------------
 
-        public static byte[] MakeTransfer(uint txId, int amount, string senderName)
+        public static byte[] MakeTransfer(uint txId, int amount, string senderName, bool shards = false)
         {
-            using (MemoryStream ms = StartPacket(PacketKind.Transfer))
+            using (MemoryStream ms = StartPacket(shards ? PacketKind.TransferShards : PacketKind.Transfer))
             using (BinaryWriter bw = new BinaryWriter(ms, Encoding.UTF8))
             {
                 bw.Write(txId);
@@ -137,6 +138,7 @@ namespace RosaryShare
                     switch (parsedKind)
                     {
                         case PacketKind.Transfer:
+                        case PacketKind.TransferShards:
                             txId = br.ReadUInt32();
                             amount = br.ReadInt32();
                             text = ReadString(br);

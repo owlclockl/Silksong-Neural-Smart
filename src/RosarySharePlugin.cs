@@ -14,7 +14,7 @@ namespace RosaryShare
     {
         public const string PluginGuid = "com.silksong.rosaryshare";
         public const string PluginName = "RosaryShare";
-        public const string PluginVersion = "1.0.0";
+        public const string PluginVersion = "1.1.0";
 
         internal static RosarySharePlugin Instance { get; private set; }
 

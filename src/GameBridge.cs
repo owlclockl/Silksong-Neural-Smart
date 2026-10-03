@@ -27,6 +27,16 @@ namespace RosaryShare
             }
         }
 
+        /// <summary>Открыто ли нативное меню предметов/карты.</summary>
+        public static bool InventoryOpen
+        {
+            get
+            {
+                try { return PlayerData.instance != null && PlayerData.instance.isInventoryOpen; }
+                catch { return false; }
+            }
+        }
+
         /// <summary>Текущее количество бусин у локального игрока.</summary>
         public static int GetGeo()
         {
@@ -98,6 +108,21 @@ namespace RosaryShare
             {
                 RosarySharePlugin.LogError("Failed to take beads: " + e);
             }
+        }
+
+        /// <summary>Текущее количество осколков панциря.</summary>
+        public static int GetShards()
+        {
+            try { return PlayerData.instance != null ? PlayerData.instance.ShellShards : 0; }
+            catch { return 0; }
+        }
+
+        /// <summary>Изменить запас осколков через игровой HeroController.</summary>
+        public static void AddShards(int amount)
+        {
+            if (amount == 0 || HeroController.instance == null) return;
+            try { HeroController.instance.AddShards(amount); }
+            catch (Exception e) { RosarySharePlugin.LogError("Failed to change shell shards: " + e); }
         }
 
         // ------------------------------------------------------------------
