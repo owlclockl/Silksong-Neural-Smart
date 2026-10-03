@@ -35,15 +35,23 @@ namespace RosaryShare
         private const string FocusField = "field";
         private const string FocusSend = "send";
         private const string FocusClose = "close";
+        private const string FocusBeads = "resource:beads";
+        private const string FocusShards = "resource:shards";
+        private const string FocusItems = "resource:items";
+        private const string FocusItemPrev = "item:prev";
+        private const string FocusItemNext = "item:next";
 
         // ---------------- Состояние ----------------
 
         private bool _open;
+        private bool _openedFromInventory;
 
         private CSteamID _selectedId;
         private int _selectedIndex = -1;
         private string _amountText = "100";
         private int _amount = 100;
+        private TransferManager.ResourceKind _resource = TransferManager.ResourceKind.Beads;
+        private int _itemIndex;
 
         private int _playerOffset;
         private int _logOffset;
@@ -90,13 +98,21 @@ namespace RosaryShare
             GamepadInput.Tick(_open);
             GameBridge.TickInputBlock();
 
+            bool inventoryOpen = ModConfig.InventoryIntegration && GameBridge.InventoryOpen;
             bool toggleByKey = Input.GetKeyDown(ModConfig.MenuKeyCode);
             bool toggleByPad = ModConfig.MenuCombo != null && ModConfig.MenuCombo.Triggered();
 
             if (toggleByKey || toggleByPad)
             {
                 if (toggleByPad) _pointerMode = false;
+                if (!_open) _openedFromInventory = inventoryOpen;
                 Toggle();
+            }
+
+            if (_open && _openedFromInventory && !inventoryOpen)
+            {
+                Close();
+                return;
             }
 
             if (!_open)
@@ -156,7 +172,7 @@ namespace RosaryShare
 
             SaveCursor();
             ApplyCursorState();
-            GameBridge.SetInputBlocked(true);
+            if (!_openedFromInventory) GameBridge.SetInputBlocked(true);
 
             if (!_loggedBackend)
             {
@@ -170,6 +186,7 @@ namespace RosaryShare
         private void Close()
         {
             _open = false;
+            _openedFromInventory = false;
             _activate = false;
             _navX = 0;
             _navY = 0;
@@ -362,7 +379,14 @@ namespace RosaryShare
                 return;
             }
 
-            TransferManager.SendError error = mgr.TrySend(target, _amount);
+            TransferManager.SendError error;
+            if (_resource == TransferManager.ResourceKind.Item)
+            {
+                IReadOnlyList<ItemBridge.ItemEntry> items = ItemBridge.Items;
+                if (items.Count == 0 || _itemIndex < 0 || _itemIndex >= items.Count) return;
+                error = mgr.TrySendItem(target, items[_itemIndex].Key, _amount);
+            }
+            else error = mgr.TrySend(target, _amount, _resource);
             if (error != TransferManager.SendError.Ok)
                 NotifyError(error);
         }
@@ -371,7 +395,12 @@ namespace RosaryShare
 
         private void OnGUI()
         {
-            if (!_open) return;
+            if (!_open)
+            {
+                if (ModConfig.InventoryIntegration && GameBridge.InventoryOpen)
+                    DrawInventoryTab();
+                return;
+            }
 
             float scale = ComputeScale();
             SilkUi.EnsureStyles(scale);
@@ -383,7 +412,7 @@ namespace RosaryShare
                 Mathf.Round(PanelW * scale),
                 Mathf.Round(PanelH * scale));
 
-            DrawBackdrop();
+            if (!_openedFromInventory) DrawBackdrop();
 
             _focusables.Clear();
 
@@ -401,6 +430,23 @@ namespace RosaryShare
             {
                 ProcessNavigation();
                 DrawSoftCursor(scale);
+            }
+        }
+
+        private void DrawInventoryTab()
+        {
+            float s = Mathf.Clamp(Mathf.Min(Screen.width / 1600f, Screen.height / 900f), 0.7f, 1.6f);
+            SilkUi.EnsureStyles(s);
+            GUI.depth = -510;
+            Rect tab = new Rect(Screen.width - 250f * s, 32f * s, 210f * s, 42f * s);
+            Vector2 mouse = Event.current.mousePosition;
+            bool hover = tab.Contains(mouse);
+            SilkUi.SmallButton(tab, Texts.T("ОБМЕН", "SHARING"), false, hover, false, true, s);
+            if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && hover)
+            {
+                _openedFromInventory = true;
+                Open();
+                Event.current.Use();
             }
         }
 
@@ -436,7 +482,7 @@ namespace RosaryShare
                 Texts.MenuSubtitle, SilkUi.Status, UiKit.BoneDim);
 
             // счётчик бусин с «бусиной» слева
-            string balance = GameBridge.GetGeo().ToString();
+            string balance = Texts.T("Бусины ", "Beads ") + GameBridge.GetGeo() + "   ·   " + Texts.T("Осколки ", "Shards ") + GameBridge.GetShards();
             Rect balanceRect = new Rect(panel.xMax - (Pad + 200f) * s, panel.y + 22f * s, 200f * s, 26f * s);
             SilkUi.Text(balanceRect, balance, SilkUi.Balance, UiKit.Gold);
 
@@ -535,8 +581,22 @@ namespace RosaryShare
             float rightX = panel.x + (Pad + ListW + ColGap) * s;
             float rightW = panel.width - (Pad + ListW + ColGap) * s - Pad * s;
 
-            SilkUi.Text(new Rect(rightX, panel.y + 118f * s, rightW, 20f * s),
+            SilkUi.Text(new Rect(rightX, panel.y + 118f * s, rightW * 0.34f, 20f * s),
                 Texts.AmountHeader.ToUpperInvariant(), SilkUi.Section, UiKit.Gold);
+
+            float tabW = 82f * s;
+            Rect beadsTab = new Rect(rightX + rightW - tabW * 3f - 12f * s, panel.y + 112f * s, tabW, 26f * s);
+            Rect shardsTab = new Rect(beadsTab.xMax + 6f * s, beadsTab.y, tabW, beadsTab.height);
+            Rect itemsTab = new Rect(shardsTab.xMax + 6f * s, beadsTab.y, tabW, beadsTab.height);
+            bool bh, bf, sh, sf, ih, inf;
+            if (Control(FocusBeads, beadsTab, false, out bh, out bf)) { _resource = TransferManager.ResourceKind.Beads; ClampAmountToBalance(); }
+            if (Control(FocusShards, shardsTab, false, out sh, out sf)) { _resource = TransferManager.ResourceKind.Shards; ClampAmountToBalance(); }
+            if (Control(FocusItems, itemsTab, false, out ih, out inf)) { _resource = TransferManager.ResourceKind.Item; SelectCurrentItem(); }
+            SilkUi.SmallButton(beadsTab, Texts.T("Бусины", "Beads"), _resource == TransferManager.ResourceKind.Beads, bh, bf, true, s);
+            SilkUi.SmallButton(shardsTab, Texts.T("Осколки", "Shards"), _resource == TransferManager.ResourceKind.Shards, sh, sf, true, s);
+            SilkUi.SmallButton(itemsTab, Texts.T("Вещи", "Items"), _resource == TransferManager.ResourceKind.Item, ih, inf, true, s);
+
+            if (_resource == TransferManager.ResourceKind.Item) { DrawItemPicker(panel, s, rightX, rightW); return; }
 
             // --- пресеты ---
             int buttons = PresetAmounts.Length + 1;
@@ -583,6 +643,50 @@ namespace RosaryShare
 
             Rect availableRect = new Rect(plusRect.xMax + 14f * s, stepY, rightW - (plusRect.xMax - rightX) - 14f * s, stepH);
             SilkUi.Text(availableRect, string.Format(Texts.AvailableFormat, EffectiveBalance()), SilkUi.Hint, UiKit.BoneDim);
+        }
+
+        private void DrawItemPicker(Rect panel, float s, float rightX, float rightW)
+        {
+            IReadOnlyList<ItemBridge.ItemEntry> items = ItemBridge.Items;
+            if (items.Count == 0)
+            {
+                SilkUi.Text(new Rect(rightX, panel.y + 150f * s, rightW, 50f * s), Texts.T("Предметы не найдены", "No items found"), SilkUi.Empty, UiKit.BoneDim);
+                return;
+            }
+            _itemIndex = Mathf.Clamp(_itemIndex, 0, items.Count - 1);
+            ItemBridge.ItemEntry item = items[_itemIndex];
+            Rect prev = new Rect(rightX, panel.y + 148f * s, 42f * s, 38f * s);
+            Rect next = new Rect(rightX + rightW - 42f * s, prev.y, 42f * s, prev.height);
+            bool ph, pf, nh, nf;
+            if (Control(FocusItemPrev, prev, false, out ph, out pf)) { _itemIndex = (_itemIndex + items.Count - 1) % items.Count; SelectCurrentItem(); }
+            if (Control(FocusItemNext, next, false, out nh, out nf)) { _itemIndex = (_itemIndex + 1) % items.Count; SelectCurrentItem(); }
+            SilkUi.SmallButton(prev, "◀", false, ph, pf, true, s);
+            SilkUi.SmallButton(next, "▶", false, nh, nf, true, s);
+            SilkUi.Well(new Rect(prev.xMax + 6f * s, prev.y, rightW - 96f * s, prev.height), s);
+            SilkUi.Text(new Rect(prev.xMax + 12f * s, prev.y, rightW - 108f * s, prev.height),
+                item.Name + "  [" + item.Category + "]", SilkUi.Item, UiKit.Bone);
+
+            float y = panel.y + 196f * s;
+            Rect minus = new Rect(rightX, y, 42f * s, 34f * s);
+            Rect field = new Rect(minus.xMax + 6f * s, y, 110f * s, 34f * s);
+            Rect plus = new Rect(field.xMax + 6f * s, y, 42f * s, 34f * s);
+            bool mh, mf, xh, xf;
+            if (Control(FocusMinus, minus, true, out mh, out mf)) StepAmount(-1);
+            DrawAmountField(field, s);
+            if (Control(FocusPlus, plus, true, out xh, out xf)) StepAmount(1);
+            SilkUi.SmallButton(minus, "−", false, mh, mf, true, s);
+            SilkUi.SmallButton(plus, "+", false, xh, xf, true, s);
+            SilkUi.Text(new Rect(plus.xMax + 12f * s, y, rightW - 220f * s, 34f * s),
+                string.Format(Texts.AvailableFormat, EffectiveBalance()), SilkUi.Hint, UiKit.BoneDim);
+        }
+
+        private void SelectCurrentItem()
+        {
+            IReadOnlyList<ItemBridge.ItemEntry> items = ItemBridge.Items;
+            if (items.Count == 0) { SetAmount(0); return; }
+            _itemIndex = Mathf.Clamp(_itemIndex, 0, items.Count - 1);
+            int available = ItemBridge.Count(items[_itemIndex].Key);
+            SetAmount(available > 0 ? 1 : 0);
         }
 
         private void DrawAmountField(Rect rect, float s)
@@ -953,9 +1057,21 @@ namespace RosaryShare
 
         // ---------------- Суммы ----------------
 
-        private static int EffectiveBalance()
+        private int EffectiveBalance()
         {
+            if (_resource == TransferManager.ResourceKind.Shards) return GameBridge.GetShards();
+            if (_resource == TransferManager.ResourceKind.Item)
+            {
+                IReadOnlyList<ItemBridge.ItemEntry> items = ItemBridge.Items;
+                return items.Count > 0 && _itemIndex < items.Count ? ItemBridge.Count(items[_itemIndex].Key) : 0;
+            }
             return GameBridge.GetGeo();
+        }
+
+        private void ClampAmountToBalance()
+        {
+            int balance = EffectiveBalance();
+            if (_amount > balance) SetAmount(balance);
         }
 
         private void SetAmount(int amount)

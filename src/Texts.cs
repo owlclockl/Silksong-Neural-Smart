@@ -116,12 +116,12 @@ namespace RosaryShare
         /// <summary>Заголовок меню (выводится вразрядку заглавными).</summary>
         public static string MenuTitle
         {
-            get { return T("ОБМЕН БУСИНАМИ", "BEAD SHARING"); }
+            get { return T("ОБМЕН РЕСУРСАМИ", "RESOURCE SHARING"); }
         }
 
         public static string MenuSubtitle
         {
-            get { return T("Розарий странников", "Rosary of the wanderers"); }
+            get { return T("Бусины и осколки странников", "Beads and shards of the wanderers"); }
         }
 
         public static string SendVerb

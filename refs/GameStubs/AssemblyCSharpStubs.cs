@@ -21,6 +21,7 @@ public sealed class PlayerData
 
     public int geo;
     public int ShellShards;
+    public bool isInventoryOpen;
 
     public void AddGeo(int amount) { throw new NotImplementedException(); }
     public void TakeGeo(int amount) { throw new NotImplementedException(); }
@@ -41,4 +42,6 @@ public sealed class HeroController
     {
         get { throw new NotImplementedException(); }
     }
+
+    public void AddShards(int amount) { throw new NotImplementedException(); }
 }

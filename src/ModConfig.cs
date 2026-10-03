@@ -22,6 +22,7 @@ namespace RosaryShare
         // --- Interface ---
         public static string Language = "Auto";
         public static bool ShowToasts = true;
+        public static bool InventoryIntegration = true;
         public static float UiScale = 1f;
         public static bool UseSerifFont = true;
         public static string FontName = string.Empty;
@@ -105,6 +106,10 @@ namespace RosaryShare
             Language = config.Bind(
                 "Interface", "Language", Language,
                 "Язык интерфейса мода: Auto, English или Russian. / UI language: Auto, English or Russian.").Value;
+
+            InventoryIntegration = config.Bind(
+                "Interface", "Inventory Integration", InventoryIntegration,
+                "Добавить вкладку обмена в открытое меню предметов/карты. / Add a sharing tab to the open items/map menu.").Value;
 
             ShowToasts = config.Bind(
                 "Interface", "Show Toasts", ShowToasts,
