@@ -65,6 +65,14 @@ const rgba = (c, a = 1) =>
 const L = {                 // макет из TransferWindow.cs
   panelW: 820, panelH: 580, pad: 30, listW: 300, colGap: 24,
   rowH: 33, logLineH: 22, visiblePlayers: 6,
+  // инвентарь-решётка (TransferWindow.DrawItemGrid)
+  gridCols: 7, gridRows: 3, slotGap: 6, lane: 10, gridTop: 142,
+};
+L.rightColW = L.panelW - L.pad * 2 - L.listW - L.colGap;
+const slotUnits = () => (L.rightColW - L.lane - L.slotGap * (L.gridCols - 1)) / L.gridCols;
+const gridExtraUnits = () => {
+  const grid = L.gridRows * slotUnits() + (L.gridRows - 1) * L.slotGap;
+  return Math.max(0, L.gridTop + grid + 8 + 34 + 6 + 34 + 10 + 54 + 6 + 18 - 310);
 };
 
 const FONT = '"Georgia", "Times New Roman", serif';
@@ -333,6 +341,148 @@ function ornateButton(r, label, enabled, hover, focused, s) {
   if (focused) focusMarkers(r, s);
   text(label, r, sizes.send * s, enabled ? C.bone : C.boneDim, "center");
 }
+// --- инвентарная решётка (SilkUi.Slot / ScrollLane / Tooltip) ---
+function slot(r, occupied, selected, hover, focused, s) {
+  if (selected) { fill(r, TEX.silkFill); fillColor(r, C.crimson, 0.22); }
+  else fillColor(r, [0, 0, 0], occupied ? (hover || focused ? 0.46 : 0.34) : 0.22);
+
+  const border = selected || hover || focused ? C.gold : C.goldDim;
+  const alpha = selected ? 0.98 : hover || focused ? 0.72 : occupied ? 0.55 : 0.24;
+  frame(r, border, alpha, Math.max(1, s));
+
+  if (occupied) {
+    const d = 6 * s, a = selected ? 0.95 : 0.75, col = selected ? C.gold : C.goldDim;
+    diamond(r[0], r[1], d, col, a);
+    diamond(r[0] + r[2], r[1], d, col, a);
+    diamond(r[0], r[1] + r[3], d, col, a);
+    diamond(r[0] + r[2], r[1] + r[3], d, col, a);
+  }
+  if (focused) {
+    const pulse = 0.62 + 0.38 * Math.sin(performance.now() / 1000 * 5.5);
+    glow(r[0] + r[2] / 2, r[1] + r[3] / 2, Math.max(r[2], r[3]) * 0.8, C.gold, 0.14 + 0.16 * pulse);
+    frame(r, C.gold, Math.min(1, 0.7 + 0.3 * pulse), Math.max(1, 2 * s));
+  }
+}
+function scrollLane(r, offset, visible, total, s) {
+  if (total <= visible) return;
+  fillColor(r, [0, 0, 0], 0.35);
+  frame(r, C.goldDim, 0.35, Math.max(1, s));
+  const thumbH = Math.max(10 * s, r[3] * Math.min(1, visible / total));
+  const pos = total - visible > 0 ? offset / (total - visible) : 0;
+  fillColor([r[0] + 1, r[1] + (r[3] - thumbH) * pos, r[2] - 2, thumbH], C.gold, 0.65);
+}
+function tooltip(at, title, line, s) {
+  const padX = 10 * s, padY = 7 * s;
+  const w = Math.max(measure(title, 15 * s), line ? measure(line, 12 * s) : 0) + padX * 2;
+  const h = padY * 2 + 18 * s + (line ? 16 * s : 0);
+  const r = [Math.min(Math.max(0, at.x + 18 * s), W - w), Math.min(Math.max(0, at.y + 16 * s), H - h), w, h];
+  glow(r[0] + r[2] / 2, r[1] + r[3] / 2, Math.max(r[2], r[3]) * 0.8, [0, 0, 0], 0.55);
+  fillColor(r, [0.05, 0.04, 0.055], 0.96);
+  frame(r, C.gold, 0.85, Math.max(1, s));
+  text(title, [r[0] + padX, r[1] + padY, r[2] - padX * 2, 18 * s], 15 * s, C.bone);
+  if (line) text(line, [r[0] + padX, r[1] + padY + 18 * s, r[2] - padX * 2, 16 * s], 12 * s, C.boneDim);
+}
+
+// Иконка вещи. В моде сюда попадает настоящий Sprite из игры (ItemBridge),
+// здесь — процедурный силуэт того же семейства, чтобы оценить вид решётки.
+function itemIcon(r, item) {
+  const cx = r[0] + r[2] / 2, cy = r[1] + r[3] / 2, u = Math.min(r[2], r[3]) / 2;
+  ctx.save();
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  const gold = rgba(C.gold, 0.95), crimson = rgba(C.crimson, 0.95), bone = rgba(C.bone, 0.9);
+  ctx.lineWidth = Math.max(1.2, u * 0.16);
+  switch (item.shape) {
+    case "key":
+      ctx.strokeStyle = gold;
+      ctx.beginPath(); ctx.arc(cx - u * 0.42, cy, u * 0.32, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - u * 0.12, cy); ctx.lineTo(cx + u * 0.72, cy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + u * 0.42, cy); ctx.lineTo(cx + u * 0.42, cy + u * 0.34); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + u * 0.66, cy); ctx.lineTo(cx + u * 0.66, cy + u * 0.26); ctx.stroke();
+      break;
+    case "scroll":
+      ctx.fillStyle = rgba(C.bone, 0.82);
+      ctx.fillRect(cx - u * 0.48, cy - u * 0.6, u * 0.96, u * 1.2);
+      ctx.strokeStyle = crimson;
+      ctx.beginPath(); ctx.moveTo(cx - u * 0.48, cy - u * 0.6); ctx.lineTo(cx + u * 0.48, cy - u * 0.6); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - u * 0.48, cy + u * 0.6); ctx.lineTo(cx + u * 0.48, cy + u * 0.6); ctx.stroke();
+      ctx.strokeStyle = rgba(C.goldDim, 0.9);
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.moveTo(cx - u * 0.3, cy + i * u * 0.26); ctx.lineTo(cx + u * 0.3, cy + i * u * 0.26); ctx.stroke();
+      }
+      break;
+    case "effigy":
+      ctx.fillStyle = rgba(C.crimson, 0.85);
+      ctx.beginPath(); ctx.moveTo(cx, cy - u * 0.7); ctx.lineTo(cx + u * 0.5, cy + u * 0.2);
+      ctx.lineTo(cx, cy + u * 0.7); ctx.lineTo(cx - u * 0.5, cy + u * 0.2); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = gold; ctx.stroke();
+      break;
+    case "harp":
+      ctx.strokeStyle = gold;
+      ctx.beginPath(); ctx.arc(cx, cy, u * 0.62, Math.PI * 0.15, Math.PI * 1.35); ctx.stroke();
+      ctx.strokeStyle = rgba(C.bone, 0.75);
+      for (let i = -1; i <= 1; i++) {
+        ctx.beginPath(); ctx.moveTo(cx + i * u * 0.22, cy - u * 0.5); ctx.lineTo(cx + i * u * 0.22, cy + u * 0.52); ctx.stroke();
+      }
+      break;
+    case "cylinder":
+      ctx.fillStyle = rgba(C.goldDim, 0.85);
+      ctx.fillRect(cx - u * 0.38, cy - u * 0.6, u * 0.76, u * 1.2);
+      ctx.strokeStyle = gold;
+      ctx.beginPath(); ctx.ellipse(cx, cy - u * 0.6, u * 0.38, u * 0.16, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(cx, cy + u * 0.6, u * 0.38, u * 0.16, 0, 0, Math.PI * 2); ctx.stroke();
+      break;
+    case "egg":
+      ctx.fillStyle = rgba(C.bone, 0.85);
+      ctx.beginPath(); ctx.ellipse(cx, cy + u * 0.05, u * 0.42, u * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = crimson; ctx.stroke();
+      break;
+    case "flea":
+      ctx.fillStyle = rgba(C.crimson, 0.9);
+      ctx.beginPath(); ctx.ellipse(cx, cy + u * 0.1, u * 0.42, u * 0.34, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = gold;
+      ctx.beginPath(); ctx.moveTo(cx - u * 0.2, cy - u * 0.25); ctx.lineTo(cx - u * 0.45, cy - u * 0.62); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx + u * 0.2, cy - u * 0.25); ctx.lineTo(cx + u * 0.45, cy - u * 0.62); ctx.stroke();
+      break;
+    case "locket":
+      ctx.strokeStyle = gold;
+      ctx.beginPath(); ctx.arc(cx, cy + u * 0.18, u * 0.42, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - u * 0.3, cy - u * 0.2); ctx.lineTo(cx, cy - u * 0.62);
+      ctx.lineTo(cx + u * 0.3, cy - u * 0.2); ctx.stroke();
+      ctx.fillStyle = rgba(C.crimson, 0.8);
+      ctx.beginPath(); ctx.arc(cx, cy + u * 0.18, u * 0.18, 0, Math.PI * 2); ctx.fill();
+      break;
+    case "ingot":
+      ctx.fillStyle = rgba(C.goldDim, 0.9);
+      ctx.beginPath(); ctx.moveTo(cx - u * 0.55, cy + u * 0.35); ctx.lineTo(cx - u * 0.35, cy - u * 0.3);
+      ctx.lineTo(cx + u * 0.35, cy - u * 0.3); ctx.lineTo(cx + u * 0.55, cy + u * 0.35); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = gold; ctx.stroke();
+      break;
+    case "flask":
+      ctx.strokeStyle = bone;
+      ctx.beginPath(); ctx.moveTo(cx - u * 0.18, cy - u * 0.6); ctx.lineTo(cx - u * 0.18, cy - u * 0.2);
+      ctx.lineTo(cx - u * 0.45, cy + u * 0.5); ctx.lineTo(cx + u * 0.45, cy + u * 0.5);
+      ctx.lineTo(cx + u * 0.18, cy - u * 0.2); ctx.lineTo(cx + u * 0.18, cy - u * 0.6); ctx.stroke();
+      ctx.fillStyle = rgba(C.gold, 0.55);
+      ctx.beginPath(); ctx.moveTo(cx - u * 0.34, cy + u * 0.12); ctx.lineTo(cx + u * 0.34, cy + u * 0.12);
+      ctx.lineTo(cx + u * 0.45, cy + u * 0.5); ctx.lineTo(cx - u * 0.45, cy + u * 0.5); ctx.closePath(); ctx.fill();
+      break;
+    case "berry":
+      ctx.fillStyle = rgba(C.crimson, 0.9);
+      ctx.beginPath(); ctx.arc(cx - u * 0.22, cy + u * 0.18, u * 0.3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx + u * 0.24, cy + u * 0.26, u * 0.24, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = gold;
+      ctx.beginPath(); ctx.moveTo(cx - u * 0.1, cy - u * 0.1); ctx.lineTo(cx + u * 0.1, cy - u * 0.6); ctx.stroke();
+      break;
+    default:
+      ctx.fillStyle = rgba(C.crimson, 0.9);
+      ctx.beginPath(); ctx.arc(cx, cy, u * 0.46, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = gold; ctx.stroke();
+      ctx.fillStyle = rgba(C.bone, 0.8);
+      ctx.beginPath(); ctx.arc(cx - u * 0.14, cy - u * 0.16, u * 0.1, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
 function hintChip(x, y, key, caption, s) {
   const h = Math.round(20 * s);
   const keyW = Math.max(h, measure(key, sizes.hint * s) + 10 * s);
@@ -357,14 +507,22 @@ const TXT = {
         choose: "Выберите игрока и сумму", send: "Передать",
         quick: "G / LB+Y — быстрая отправка (100)",
         hintSelect: "Выбор", hintConfirm: "Выбрать", hintClose: "Закрыть",
-        hintAmount: "Сумма", hintJournal: "Журнал" },
+        hintAmount: "Сумма", hintJournal: "Журнал",
+        beads: "Бусины", shards: "Осколки", itemsTab: "Вещи", itemsHeader: "ПОЖИТКИ",
+        safeOnly: "только безопасные", goods: n => `вещей: ${n}`, unique: "уникальный предмет",
+        pick: "Выберите вещь в решётке", noItems: "В сумке нет предметов, которые можно передать",
+        safeNote: "В решётке только безопасные вещи — способности, маски, катушки, гербы и сюжет не передаются" },
   en: { title: "BEAD SHARING", subtitle: "Rosary of the wanderers", players: "PLAYERS",
         amount: "AMOUNT", journal: "HISTORY", all: "All", close: "Close",
         available: "Available: ", lobby: "In lobby: 4   ·   pending: 1",
         choose: "Choose a player and an amount", send: "Bestow",
         quick: "G / LB+Y — quick send (100)",
         hintSelect: "Select", hintConfirm: "Choose", hintClose: "Close",
-        hintAmount: "Amount", hintJournal: "Journal" },
+        hintAmount: "Amount", hintJournal: "Journal",
+        beads: "Beads", shards: "Shards", itemsTab: "Items", itemsHeader: "SATCHEL",
+        safeOnly: "safe only", goods: n => `goods: ${n}`, unique: "unique item",
+        pick: "Pick a good from the grid", noItems: "No transferable goods in your satchel",
+        safeNote: "The grid holds safe goods only — abilities, masks, spools, crests and story flags are never traded" },
 };
 
 const players = ["Ткачиха Лейс", "Shakra", "Пилигрим Нюу", "Garmond", "Sherma", "Крошка Шири", "Hollow_Knight_77"];
@@ -377,11 +535,42 @@ const journal = [
 ];
 const presets = [100, 500, 1000, 5000];
 
+// Безопасные вещи (та же логика allow-list, что в ItemBridge.cs):
+// ключи, реликвии, блохи, памятные вещи и материалы. Способностей,
+// гербов, масок/катушек и сюжетных флагов здесь нет и быть не может.
+const items = [
+  { key: "simpleKey",       name: "Simple Key",        cat: "Ключи",          count: 3,  shape: "key" },
+  { key: "miscKey",         name: "Misc Key",          cat: "Ключи",          count: 1,  shape: "key", unique: true },
+  { key: "boneScroll",      name: "Bone Scroll",       cat: "Реликвии",       count: 4,  shape: "scroll" },
+  { key: "weaverEffigy",    name: "Weaver Effigy",     cat: "Реликвии",       count: 2,  shape: "effigy" },
+  { key: "runeHarp",        name: "Rune Harp",         cat: "Реликвии",       count: 1,  shape: "harp", unique: true },
+  { key: "choralCommandment", name: "Choral Commandment", cat: "Реликвии",    count: 6,  shape: "scroll" },
+  { key: "psalmCylinder",   name: "Psalm Cylinder",    cat: "Реликвии",       count: 2,  shape: "cylinder" },
+  { key: "arcaneEgg",       name: "Arcane Egg",        cat: "Реликвии",       count: 12, shape: "egg" },
+  { key: "flea",            name: "Flea",              cat: "Блохи",          count: 9,  shape: "flea" },
+  { key: "memento",         name: "Memento",           cat: "Памятные вещи",  count: 5,  shape: "locket" },
+  { key: "memoryLocket",    name: "Memory Locket",     cat: "Памятные вещи",  count: 7,  shape: "locket" },
+  { key: "craftmetal",      name: "Craftmetal",        cat: "Материалы",      count: 24, shape: "ingot" },
+  { key: "paleOil",         name: "Pale Oil",          cat: "Материалы",      count: 3,  shape: "flask" },
+  { key: "mossberry",       name: "Mossberry",         cat: "Материалы",      count: 15, shape: "berry" },
+  { key: "trinket",         name: "Trinket",           cat: "Предметы",       count: 2,  shape: "bead" },
+  { key: "shellRelic",      name: "Shell Relic",       cat: "Реликвии",       count: 1,  shape: "effigy", unique: true },
+  { key: "pilgrimKey",      name: "Pilgrim Key",       cat: "Ключи",          count: 2,  shape: "key" },
+  { key: "silkRibbon",      name: "Silk Ribbon",       cat: "Памятные вещи",  count: 4,  shape: "locket" },
+  { key: "quillTooth",      name: "Quill Tooth",       cat: "Материалы",      count: 8,  shape: "ingot" },
+  { key: "hymnPlate",       name: "Hymn Plate",        cat: "Реликвии",       count: 3,  shape: "cylinder" },
+  { key: "wanderersMark",   name: "Wanderer's Mark",   cat: "Предметы",       count: 1,  shape: "bead", unique: true },
+  { key: "mossCluster",     name: "Moss Cluster",      cat: "Материалы",      count: 11, shape: "berry" },
+  { key: "hornetCharm",     name: "Hornet Keepsake",   cat: "Памятные вещи",  count: 2,  shape: "locket" },
+];
+
 const state = {
-  balance: 4820, amount: 500, selected: 1, playerOffset: 0,
+  balance: 4820, shards: 186, amount: 500, selected: 1, playerOffset: 0,
   focusId: "send", pointerMode: true, mouse: { x: -999, y: -999 },
   cursorMode: "Soft", uiScale: 1, lang: "ru", lastPointerAt: 0, lastPadAt: -999,
+  resource: "items", itemKey: "boneScroll", itemOffset: 0,
 };
+let tip = null;
 let focusables = [];
 let clickTargets = [];
 
@@ -426,10 +615,18 @@ function drawGameBehind() {
 //  Главная отрисовка — порт TransferWindow.OnGUI
 // ======================================================================
 
-function computeScale() {
+function computeScale(panelH) {
   let s = Math.min(W / 1600, H / 900);
   s = Math.min(2.2, Math.max(0.62, s)) * state.uiScale;
-  return Math.max(0.4, Math.min(s, Math.min((W - 32) / L.panelW, (H - 32) / L.panelH)));
+  return Math.max(0.4, Math.min(s, Math.min((W - 32) / L.panelW, (H - 32) / panelH)));
+}
+const itemsMode = () => state.resource === "items";
+const ownedItems = () => items.filter(it => it.count > 0);
+const findItem = key => items.find(it => it.key === key) || null;
+function balanceOf() {
+  if (state.resource === "shards") return state.shards;
+  if (itemsMode()) { const it = findItem(state.itemKey); return it ? it.count : 0; }
+  return state.balance;
 }
 
 function control(id, r) {
@@ -453,17 +650,19 @@ function draw() {
 
   drawGameBehind();
 
-  const s = computeScale();
+  const extra = itemsMode() ? gridExtraUnits() : 0;
+  const panelH = L.panelH + extra;
+  const s = computeScale(panelH);
   const t = tr();
-  focusables = []; clickTargets = [];
+  focusables = []; clickTargets = []; tip = null;
 
   // затемнение и виньетка (DrawBackdrop)
   fillColor([0, 0, 0, 0], [0, 0, 0], 0);
   ctx.fillStyle = "rgba(3,3,4,0.64)"; ctx.fillRect(0, 0, W, H);
   fill([0, 0, 0 + W, H], TEX.vignette, 0.9);
 
-  const p = [Math.round((W - L.panelW * s) / 2), Math.round((H - L.panelH * s) / 2),
-             Math.round(L.panelW * s), Math.round(L.panelH * s)];
+  const p = [Math.round((W - L.panelW * s) / 2), Math.round((H - panelH * s) / 2),
+             Math.round(L.panelW * s), Math.round(panelH * s)];
   panelBg(p, s);
 
   const x0 = p[0] + L.pad * s;
@@ -473,7 +672,7 @@ function draw() {
   text(spaced(t.title), [x0, p[1] + 20 * s, width, 34 * s], sizes.title * s, C.bone, "center");
   text(t.subtitle, [x0, p[1] + 56 * s, width, 18 * s], sizes.status * s, C.boneDim, "center");
 
-  const balance = String(state.balance);
+  const balance = `${t.beads} ${state.balance}   ·   ${t.shards} ${state.shards}`;
   const balanceRect = [p[0] + p[2] - (L.pad + 200) * s, p[1] + 22 * s, 200 * s, 26 * s];
   text(balance, balanceRect, sizes.balance * s, C.gold, "right");
   const bx = balanceRect[0] + balanceRect[2] - measure(balance, sizes.balance * s) - 14 * s;
@@ -504,55 +703,43 @@ function draw() {
   if (last < players.length)
     text("▼", [listRect[0] + listRect[2] - 22 * s, listRect[1] + listRect[3] - 18 * s, 18 * s, 16 * s], sizes.hint * s, C.gold);
 
-  // ---------- сумма ----------
+  // ---------- ресурс: бусины / осколки / вещи ----------
   const rightX = p[0] + (L.pad + L.listW + L.colGap) * s;
   const rightW = p[2] - (L.pad + L.listW + L.colGap) * s - L.pad * s;
-  text(t.amount, [rightX, p[1] + 118 * s, rightW, 20 * s], sizes.section * s, C.gold);
+  text(itemsMode() ? t.itemsHeader : t.amount,
+       [rightX, p[1] + 118 * s, rightW * 0.42, 20 * s], sizes.section * s, C.gold);
 
-  const gap = 8 * s, count = presets.length + 1;
-  const bw = (rightW - gap * (count - 1)) / count;
-  presets.forEach((value, i) => {
-    const r = [rightX + i * (bw + gap), p[1] + 142 * s, bw, 34 * s];
-    const st = control("preset:" + i, r);
-    smallButton(r, String(value), state.amount === value, st.hover, st.focused, s);
+  const tabW = 82 * s;
+  const tabs = [["beads", t.beads], ["shards", t.shards], ["items", t.itemsTab]];
+  tabs.forEach(([id, label], i) => {
+    const r = [rightX + rightW - tabW * (3 - i) - 12 * s + i * 6 * s, p[1] + 112 * s, tabW, 26 * s];
+    const st = control("resource:" + id, r);
+    smallButton(r, label, state.resource === id, st.hover, st.focused, s);
   });
-  const allRect = [rightX + presets.length * (bw + gap), p[1] + 142 * s, bw, 34 * s];
-  const allSt = control("preset:all", allRect);
-  smallButton(allRect, t.all, state.amount === state.balance, allSt.hover, allSt.focused, s);
 
-  const stepY = p[1] + 186 * s, stepH = 34 * s, stepW = 40 * s, fieldW = 120 * s;
-  const minusRect = [rightX, stepY, stepW, stepH];
-  const mSt = control("minus", minusRect);
-  smallButton(minusRect, "−", false, mSt.hover, mSt.focused, s);
-
-  const fieldRect = [minusRect[0] + minusRect[2] + 6 * s, stepY, fieldW, stepH];
-  const fSt = control("field", fieldRect);
-  fill(fieldRect, TEX.fieldFill);
-  frame(fieldRect, C.gold, fSt.hover || fSt.focused ? 0.9 : 0.5, Math.max(1, s));
-  if (fSt.focused) focusMarkers(fieldRect, s);
-  text(String(state.amount), fieldRect, 17 * s, C.bone, "center");
-
-  const plusRect = [fieldRect[0] + fieldRect[2] + 6 * s, stepY, stepW, stepH];
-  const pSt = control("plus", plusRect);
-  smallButton(plusRect, "+", false, pSt.hover, pSt.focused, s);
-
-  text(t.available + state.balance,
-       [plusRect[0] + plusRect[2] + 14 * s, stepY, rightW, stepH], sizes.hint * s, C.boneDim);
+  if (itemsMode()) drawItemGrid(p, s, rightX, rightW, t);
+  else drawAmount(p, s, rightX, rightW, t);
 
   // ---------- кнопка передачи ----------
-  const sendRect = [rightX, p[1] + 232 * s, rightW, 54 * s];
+  const sendRect = [rightX, p[1] + (232 + extra) * s, rightW, 54 * s];
   const sendSt = control("send", sendRect);
   const target = players[state.selected];
-  const label = target && state.amount > 0
-    ? `${t.send} ${state.amount} → ${ellipsize(target, sizes.send * s, rightW * 0.45)}`
-    : t.choose;
-  ornateButton(sendRect, label, !!target && state.amount > 0, sendSt.hover, sendSt.focused, s);
-  text(t.quick, [rightX, p[1] + 292 * s, rightW, 18 * s], sizes.hint * s, C.boneDim);
+  const picked = itemsMode() ? findItem(state.itemKey) : null;
+  const ready = !!target && state.amount > 0 && (!itemsMode() || !!picked);
+  const what = itemsMode() && picked ? `${state.amount} × ${picked.name}` : String(state.amount);
+  const label = ready
+    ? `${t.send} ${what} → ${ellipsize(target, sizes.send * s, rightW * 0.30)}`
+    : (itemsMode() && !picked ? t.pick : t.choose);
+  ornateButton(sendRect, ellipsize(label, sizes.send * s, sendRect[2] - 28 * s), ready, sendSt.hover, sendSt.focused, s);
+
+  const underSend = itemsMode() ? t.safeNote : t.quick;
+  text(ellipsize(underSend, sizes.hint * s, rightW),
+       [rightX, p[1] + (292 + extra) * s, rightW, 18 * s], sizes.hint * s, C.boneDim);
 
   // ---------- журнал ----------
-  divider([x0, p[1] + 348 * s, width, Math.max(1, s)], s);
-  text(t.journal, [x0, p[1] + 362 * s, width, 20 * s], sizes.section * s, C.gold);
-  const logRect = [x0, p[1] + 386 * s, width, 126 * s];
+  divider([x0, p[1] + (348 + extra) * s, width, Math.max(1, s)], s);
+  text(t.journal, [x0, p[1] + (362 + extra) * s, width, 20 * s], sizes.section * s, C.gold);
+  const logRect = [x0, p[1] + (386 + extra) * s, width, 126 * s];
   well(logRect, s);
   const lines = Math.max(1, Math.floor(logRect[3] / (L.logLineH * s)));
   journal.slice(-lines).forEach((entry, i) => {
@@ -561,7 +748,7 @@ function draw() {
   });
 
   // ---------- низ ----------
-  const footY = p[1] + 538 * s;
+  const footY = p[1] + (538 + extra) * s;
   const closeRect = [p[0] + p[2] - (L.pad + 150) * s, footY - 16 * s, 150 * s, 32 * s];
   const cSt = control("close", closeRect);
   smallButton(closeRect, t.close, false, cSt.hover, cSt.focused, s);
@@ -579,8 +766,129 @@ function draw() {
     if (hx < closeRect[0] - 120 * s) hintChip(hx, footY, "LB+RB", "открыть", s);
   }
 
+  // ---------- подсказка предмета ----------
+  if (tip) tooltip(tip.at, tip.title, tip.line, s);
+
   // ---------- курсор ----------
   drawCursor(s);
+}
+
+// Обычный режим сумм: пресеты и поле ввода.
+function drawAmount(p, s, rightX, rightW, t) {
+  const gap = 8 * s, count = presets.length + 1;
+  const bw = (rightW - gap * (count - 1)) / count;
+  presets.forEach((value, i) => {
+    const r = [rightX + i * (bw + gap), p[1] + 142 * s, bw, 34 * s];
+    const st = control("preset:" + i, r);
+    smallButton(r, String(value), state.amount === value, st.hover, st.focused, s);
+  });
+  const allRect = [rightX + presets.length * (bw + gap), p[1] + 142 * s, bw, 34 * s];
+  const allSt = control("preset:all", allRect);
+  smallButton(allRect, t.all, state.amount === balanceOf(), allSt.hover, allSt.focused, s);
+
+  const stepY = p[1] + 186 * s, stepH = 34 * s, stepW = 40 * s, fieldW = 120 * s;
+  const minusRect = [rightX, stepY, stepW, stepH];
+  const mSt = control("minus", minusRect);
+  smallButton(minusRect, "−", false, mSt.hover, mSt.focused, s);
+
+  const fieldRect = [minusRect[0] + minusRect[2] + 6 * s, stepY, fieldW, stepH];
+  const fSt = control("field", fieldRect);
+  fill(fieldRect, TEX.fieldFill);
+  frame(fieldRect, C.gold, fSt.hover || fSt.focused ? 0.9 : 0.5, Math.max(1, s));
+  if (fSt.focused) focusMarkers(fieldRect, s);
+  text(String(state.amount), fieldRect, 17 * s, C.bone, "center");
+
+  const plusRect = [fieldRect[0] + fieldRect[2] + 6 * s, stepY, stepW, stepH];
+  const pSt = control("plus", plusRect);
+  smallButton(plusRect, "+", false, pSt.hover, pSt.focused, s);
+
+  text(t.available + balanceOf(),
+       [plusRect[0] + plusRect[2] + 14 * s, stepY, rightW, stepH], sizes.hint * s, C.boneDim);
+}
+
+// Инвентарь-решёткой (порт TransferWindow.DrawItemGrid).
+function drawItemGrid(p, s, rightX, rightW, t) {
+  const view = ownedItems();
+  const count = view.length;
+  const gap = L.slotGap * s, lane = L.lane * s;
+  const cell = (rightW - lane - gap * (L.gridCols - 1)) / L.gridCols;
+  const gridH = L.gridRows * cell + (L.gridRows - 1) * gap;
+  const grid = [rightX, p[1] + L.gridTop * s, rightW - lane, gridH];
+
+  well([grid[0] - 5 * s, grid[1] - 5 * s, rightW + 10 * s, gridH + 10 * s], s);
+
+  const rows = Math.max(1, Math.ceil(count / L.gridCols));
+  const maxOffset = Math.max(0, rows - L.gridRows);
+  state.itemOffset = Math.min(Math.max(0, state.itemOffset), maxOffset);
+
+  let hovered = null;
+  for (let row = 0; row < L.gridRows; row++) {
+    for (let col = 0; col < L.gridCols; col++) {
+      const index = (row + state.itemOffset) * L.gridCols + col;
+      const r = [Math.round(grid[0] + col * (cell + gap)), Math.round(grid[1] + row * (cell + gap)),
+                 Math.round(cell), Math.round(cell)];
+      if (index >= count) { slot(r, false, false, false, false, s); continue; }
+
+      const it = view[index];
+      const st = control("slot:" + index, r);
+      slot(r, true, it.key === state.itemKey, st.hover, st.focused, s);
+      const pad = 6 * s;
+      itemIcon([r[0] + pad, r[1] + pad, r[2] - pad * 2, r[3] - pad * 2], it);
+      if (!it.unique && it.count > 1)
+        text("×" + it.count, [r[0] + 4 * s, r[1] + r[3] - 17 * s, r[2] - 8 * s, 14 * s], 13 * s, C.gold, "right");
+      if (st.hover) hovered = it;
+    }
+  }
+
+  scrollLane([rightX + rightW - lane + 2 * s, grid[1], lane - 2 * s, gridH],
+             state.itemOffset, L.gridRows, rows, s);
+
+  if (count > 0)
+    text(t.goods(count),
+         [rightX, p[1] + 118 * s, rightW - 268 * s, 20 * s], 14 * s, C.boneDim, "right");
+
+  // описание выбранной/наведённой вещи
+  const shown = hovered || findItem(state.itemKey);
+  const bar = [rightX, grid[1] + gridH + 8 * s, rightW, 34 * s];
+  well(bar, s);
+  if (count === 0) {
+    text(t.noItems, grid, sizes.empty * s, C.boneDim, "center");
+    text(t.safeOnly, bar, sizes.empty * s, C.boneDim, "center");
+  } else if (!shown) {
+    text(t.pick, bar, sizes.empty * s, C.boneDim, "center");
+  } else {
+    const icon = bar[3] - 8 * s;
+    itemIcon([bar[0] + 5 * s, bar[1] + 4 * s, icon, icon], shown);
+    const tail = shown.unique ? t.unique : "× " + shown.count;
+    const nameW = bar[2] - icon - 140 * s;
+    text(ellipsize(shown.name, sizes.item * s, nameW),
+         [bar[0] + icon + 13 * s, bar[1], nameW, bar[3]], sizes.item * s, C.bone);
+    text(`${shown.cat}   ${tail}`,
+         [bar[0] + bar[2] - 112 * s, bar[1], 102 * s, bar[3]], 14 * s, C.gold, "right");
+    if (hovered) tip = { at: state.mouse, title: shown.name, line: `${shown.cat}  ·  ${tail}` };
+  }
+
+  // количество
+  const y = bar[1] + bar[3] + 6 * s, stepW = 42 * s;
+  const minusRect = [rightX, y, stepW, 34 * s];
+  const fieldRect = [minusRect[0] + stepW + 6 * s, y, 96 * s, 34 * s];
+  const plusRect = [fieldRect[0] + fieldRect[2] + 6 * s, y, stepW, 34 * s];
+  const allRect = [plusRect[0] + stepW + 10 * s, y, 64 * s, 34 * s];
+
+  const mSt = control("minus", minusRect);
+  smallButton(minusRect, "−", false, mSt.hover, mSt.focused, s);
+  const fSt = control("field", fieldRect);
+  fill(fieldRect, TEX.fieldFill);
+  frame(fieldRect, C.gold, fSt.hover || fSt.focused ? 0.9 : 0.5, Math.max(1, s));
+  if (fSt.focused) focusMarkers(fieldRect, s);
+  text(String(state.amount), fieldRect, 17 * s, C.bone, "center");
+  const pSt = control("plus", plusRect);
+  smallButton(plusRect, "+", false, pSt.hover, pSt.focused, s);
+  const aSt = control("item:all", allRect);
+  smallButton(allRect, t.all, state.amount === balanceOf(), aSt.hover, aSt.focused, s);
+
+  text(t.available + balanceOf(),
+       [allRect[0] + allRect[2] + 12 * s, y, rightW, 34 * s], sizes.hint * s, C.boneDim);
 }
 
 function drawCursor(s) {
@@ -612,6 +920,14 @@ cv.addEventListener("mousedown", () => {
   if (target) activate(target.id);
 });
 
+cv.addEventListener("wheel", e => {
+  if (!itemsMode()) return;
+  const rows = Math.max(1, Math.ceil(ownedItems().length / L.gridCols));
+  const max = Math.max(0, rows - L.gridRows);
+  state.itemOffset = Math.min(max, Math.max(0, state.itemOffset + (e.deltaY > 0 ? 1 : -1)));
+  e.preventDefault();
+}, { passive: false });
+
 window.addEventListener("keydown", e => {
   const map = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
   if (map[e.key]) { state.pointerMode = false; moveFocus(...map[e.key]); e.preventDefault(); }
@@ -622,18 +938,42 @@ window.addEventListener("keydown", e => {
 function activate(id) {
   state.focusId = id;
   if (id.startsWith("player:")) { state.selected = +id.slice(7); }
+  else if (id.startsWith("resource:")) { state.resource = id.slice(9); syncItem(); }
+  else if (id.startsWith("slot:")) selectSlot(+id.slice(5));
   else if (id.startsWith("preset:")) {
-    state.amount = id === "preset:all" ? state.balance : presets[+id.slice(7)];
+    state.amount = id === "preset:all" ? balanceOf() : presets[+id.slice(7)];
   } else if (id === "minus") step(-1);
   else if (id === "plus") step(1);
+  else if (id === "item:all") state.amount = balanceOf();
   else if (id === "send") doSend();
   else if (id === "close") flash("Меню закрыто (F7 / B)");
 }
+function selectSlot(index) {
+  const view = ownedItems();
+  if (index < 0 || index >= view.length) return;
+  state.itemKey = view[index].key;
+  state.focusId = "slot:" + index;
+  const row = Math.floor(index / L.gridCols);
+  const rows = Math.max(1, Math.ceil(view.length / L.gridCols));
+  if (row < state.itemOffset) state.itemOffset = row;
+  else if (row >= state.itemOffset + L.gridRows) state.itemOffset = row - L.gridRows + 1;
+  state.itemOffset = Math.min(state.itemOffset, Math.max(0, rows - L.gridRows));
+  state.amount = Math.min(1, balanceOf());
+}
+function syncItem() {
+  if (!itemsMode()) { state.amount = Math.min(state.amount, balanceOf()); return; }
+  const view = ownedItems();
+  if (!view.length) { state.itemKey = ""; state.amount = 0; return; }
+  if (!view.some(it => it.key === state.itemKey)) state.itemKey = view[0].key;
+  state.amount = Math.min(1, balanceOf());
+}
 function step(dir) {
-  const st = state.amount < 200 ? 10 : state.amount < 2000 ? 50 : state.amount < 20000 ? 250 : 1000;
-  state.amount = Math.max(0, Math.min(state.balance, state.amount + st * dir));
+  const st = itemsMode() ? 1
+    : state.amount < 200 ? 10 : state.amount < 2000 ? 50 : state.amount < 20000 ? 250 : 1000;
+  state.amount = Math.max(0, Math.min(balanceOf(), state.amount + st * dir));
 }
 function cyclePreset(dir) {
+  if (itemsMode()) { step(dir); return; }
   let i = presets.indexOf(state.amount);
   if (i < 0) i = dir > 0 ? -1 : presets.length;
   i = (i + dir + presets.length) % presets.length;
@@ -642,9 +982,24 @@ function cyclePreset(dir) {
 function doSend() {
   const target = players[state.selected];
   if (!target || state.amount <= 0) return;
-  journal.push([`Отправлено ${state.amount} бусин → ${target}`, C.boneSoft]);
-  setTimeout(() => journal.push([`Доставлено: ${target} получил ${state.amount} бусин`, C.success]), 700);
-  state.balance = Math.max(0, state.balance - state.amount);
+
+  if (itemsMode()) {
+    const it = findItem(state.itemKey);
+    if (!it || it.count < state.amount) return;
+    it.count -= state.amount;
+    journal.push([`Отправлено ${state.amount} × ${it.name} → ${target}`, C.boneSoft]);
+    const sent = state.amount, name = it.name;
+    setTimeout(() => journal.push([`Доставлено: ${target} получил ${sent} × ${name}`, C.success]), 700);
+    syncItem();
+    return;
+  }
+
+  const unit = state.resource === "shards" ? "осколков" : "бусин";
+  journal.push([`Отправлено ${state.amount} ${unit} → ${target}`, C.boneSoft]);
+  const sent = state.amount;
+  setTimeout(() => journal.push([`Доставлено: ${target} получил ${sent} ${unit}`, C.success]), 700);
+  if (state.resource === "shards") state.shards = Math.max(0, state.shards - sent);
+  else state.balance = Math.max(0, state.balance - sent);
 }
 function flash(msg) {
   journal.push([msg, C.warn]);
@@ -656,6 +1011,13 @@ function moveFocus(dx, dy) {
     if (next >= 0 && next < players.length) { selectPlayer(next); return; }
     if (dy < 0) return;
   }
+  if (state.focusId.startsWith("slot:")) {
+    const view = ownedItems(), index = +state.focusId.slice(5);
+    const next = index + (dx !== 0 ? dx : dy * L.gridCols);
+    if (next >= 0 && next < view.length) { selectSlot(next); return; }
+    if (dy > 0 && next >= view.length && index < view.length - 1) { selectSlot(view.length - 1); return; }
+  }
+
   const current = focusables.find(f => f.id === state.focusId);
   if (!current) { state.focusId = focusables[0].id; return; }
   const from = [current.r[0] + current.r[2] / 2, current.r[1] + current.r[3] / 2];
@@ -673,6 +1035,7 @@ function moveFocus(dx, dy) {
   if (best) {
     state.focusId = best;
     if (best.startsWith("player:")) selectPlayer(+best.slice(7));
+    else if (best.startsWith("slot:")) selectSlot(+best.slice(5));
   }
 }
 function selectPlayer(index) {
@@ -717,7 +1080,7 @@ function pollGamepad() {
 
   if (pressed(0)) { state.pointerMode = false; activate(state.focusId); }     // A
   if (pressed(1)) { state.pointerMode = false; flash("Меню закрыто (B)"); }   // B
-  if (pressed(2)) { state.pointerMode = false; state.amount = state.balance; }// X
+  if (pressed(2)) { state.pointerMode = false; state.amount = balanceOf(); }  // X
   if (pressed(4)) { state.pointerMode = false; cyclePreset(-1); }             // LB
   if (pressed(5)) { state.pointerMode = false; cyclePreset(1); }              // RB
 }

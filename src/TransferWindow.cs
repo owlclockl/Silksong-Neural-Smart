@@ -24,6 +24,16 @@ namespace RosaryShare
         private const float LogLineH = 22f;
         private const int VisiblePlayers = 6;
 
+        // ---- Инвентарная решётка («как в сталкере»): квадратные ячейки ----
+        private const int GridCols = 7;
+        private const int GridRows = 3;
+        private const float SlotGap = 6f;
+        private const float ScrollLaneW = 10f;
+        private const float GridTop = 142f;
+
+        /// <summary>Ширина правой колонки в условных единицах макета.</summary>
+        private const float RightColumnW = PanelW - Pad * 2f - ListW - ColGap;
+
         private static readonly int[] PresetAmounts = { 100, 500, 1000, 5000 };
 
         private const string AmountControlName = "RosaryShareAmount";
@@ -38,8 +48,8 @@ namespace RosaryShare
         private const string FocusBeads = "resource:beads";
         private const string FocusShards = "resource:shards";
         private const string FocusItems = "resource:items";
-        private const string FocusItemPrev = "item:prev";
-        private const string FocusItemNext = "item:next";
+        private const string ItemPrefix = "slot:";
+        private const string FocusItemAll = "item:all";
 
         // ---------------- Состояние ----------------
 
@@ -50,7 +60,22 @@ namespace RosaryShare
         private string _amountText = "100";
         private int _amount = 100;
         private TransferManager.ResourceKind _resource = TransferManager.ResourceKind.Beads;
-        private int _itemIndex;
+
+        /// <summary>Ключ выбранной вещи (а не индекс: состав решётки меняется на ходу).</summary>
+        private string _itemKey = string.Empty;
+
+        /// <summary>Прокрутка решётки в строках.</summary>
+        private int _itemRowOffset;
+
+        /// <summary>Безопасные предметы, которые сейчас есть в инвентаре.</summary>
+        private readonly List<ItemBridge.ItemEntry> _itemView = new List<ItemBridge.ItemEntry>(64);
+
+        private Rect _gridRect;
+        private float _itemViewAt = -99f;
+        private float _extra;
+        private string _tipTitle;
+        private string _tipLine;
+        private Vector2 _tipAt;
 
         private int _playerOffset;
         private int _logOffset;
@@ -166,6 +191,8 @@ namespace RosaryShare
 
             if (string.IsNullOrEmpty(_focusId))
                 _focusId = FocusSend;
+
+            if (_resource == TransferManager.ResourceKind.Item) SyncItemSelection();
 
             SaveCursor();
             ApplyCursorState();
@@ -288,6 +315,7 @@ namespace RosaryShare
             {
                 if (GamepadInput.Pressed(GamepadInput.Btn.LeftBumper)) CyclePreset(-1);
                 if (GamepadInput.Pressed(GamepadInput.Btn.RightBumper)) CyclePreset(1);
+
                 if (GamepadInput.Pressed(GamepadInput.Btn.Alt)) SetAmount(Mathf.Min(EffectiveBalance(), ModConfig.MaxSendAmount));
 
                 if (GamepadInput.Pressed(GamepadInput.Btn.LeftTrigger)) ScrollLog(-1);
@@ -384,9 +412,13 @@ namespace RosaryShare
             TransferManager.SendError error;
             if (_resource == TransferManager.ResourceKind.Item)
             {
-                IReadOnlyList<ItemBridge.ItemEntry> items = ItemBridge.Items;
-                if (items.Count == 0 || _itemIndex < 0 || _itemIndex >= items.Count) return;
-                error = mgr.TrySendItem(target, items[_itemIndex].Key, _amount);
+                if (string.IsNullOrEmpty(_itemKey) || ItemBridge.Count(_itemKey) <= 0)
+                {
+                    SyncItemSelection();
+                    if (string.IsNullOrEmpty(_itemKey)) return;
+                }
+                error = mgr.TrySendItem(target, _itemKey, _amount);
+                if (error == TransferManager.SendError.Ok) SyncItemSelection();
             }
             else error = mgr.TrySend(target, _amount, _resource);
             if (error != TransferManager.SendError.Ok)
@@ -400,15 +432,22 @@ namespace RosaryShare
             // This is an independent overlay, not a tab in the native inventory.
             if (!_open) return;
 
-            float scale = ComputeScale();
+            // Вкладка «Вещи» показывает решётку инвентаря — панель под неё выше.
+            _extra = _resource == TransferManager.ResourceKind.Item ? GridExtraUnits() : 0f;
+            float panelH = PanelH + _extra;
+
+            float scale = ComputeScale(panelH);
             SilkUi.EnsureStyles(scale);
             GUI.depth = -500;
 
+            _tipTitle = null;
+            _tipLine = null;
+
             Rect panel = new Rect(
                 Mathf.Round((Screen.width - PanelW * scale) * 0.5f),
-                Mathf.Round((Screen.height - PanelH * scale) * 0.5f),
+                Mathf.Round((Screen.height - panelH * scale) * 0.5f),
                 Mathf.Round(PanelW * scale),
-                Mathf.Round(PanelH * scale));
+                Mathf.Round(panelH * scale));
 
             DrawBackdrop();
 
@@ -424,6 +463,11 @@ namespace RosaryShare
 
             HandleScrollWheel(panel, scale);
 
+            // подсказка предмета рисуется поверх всего, кроме курсора
+            if (!string.IsNullOrEmpty(_tipTitle))
+                SilkUi.Tooltip(_tipAt, _tipTitle, _tipLine, scale,
+                    new Rect(0f, 0f, Screen.width, Screen.height));
+
             if (Event.current.type == EventType.Repaint)
             {
                 ProcessNavigation();
@@ -431,14 +475,38 @@ namespace RosaryShare
             }
         }
 
-        private float ComputeScale()
+        private float ComputeScale(float panelH)
         {
             float scale = Mathf.Min(Screen.width / 1600f, Screen.height / 900f);
             scale = Mathf.Clamp(scale, 0.62f, 2.2f) * Mathf.Clamp(ModConfig.UiScale, 0.5f, 3f);
 
             float maxByWidth = (Screen.width - 32f) / PanelW;
-            float maxByHeight = (Screen.height - 32f) / PanelH;
+            float maxByHeight = (Screen.height - 32f) / Mathf.Max(1f, panelH);
             return Mathf.Max(0.4f, Mathf.Min(scale, Mathf.Min(maxByWidth, maxByHeight)));
+        }
+
+        // ---------------- Геометрия решётки ----------------
+
+        /// <summary>Сторона квадратной ячейки в условных единицах макета.</summary>
+        private static float SlotUnits()
+        {
+            return (RightColumnW - ScrollLaneW - SlotGap * (GridCols - 1)) / GridCols;
+        }
+
+        /// <summary>
+        /// Насколько панель вырастает, когда открыта вкладка «Вещи»: решётка,
+        /// строка описания и поле количества занимают больше места, чем обычные
+        /// пресеты сумм. Считается из той же геометрии, что и отрисовка.
+        /// </summary>
+        private static float GridExtraUnits()
+        {
+            float grid = GridRows * SlotUnits() + (GridRows - 1) * SlotGap;
+
+            // решётка → описание (8+34) → количество (6+34) → кнопка (10+54) → подсказка (6+18)
+            float bottom = GridTop + grid + 8f + 34f + 6f + 34f + 10f + 54f + 6f + 18f;
+
+            // в обычном режиме низ правой колонки (подсказка под кнопкой) = 310
+            return Mathf.Max(0f, bottom - 310f);
         }
 
         private void DrawBackdrop()
@@ -562,8 +630,10 @@ namespace RosaryShare
             float rightX = panel.x + (Pad + ListW + ColGap) * s;
             float rightW = panel.width - (Pad + ListW + ColGap) * s - Pad * s;
 
-            SilkUi.Text(new Rect(rightX, panel.y + 118f * s, rightW * 0.34f, 20f * s),
-                Texts.AmountHeader.ToUpperInvariant(), SilkUi.Section, UiKit.Gold);
+            bool itemsMode = _resource == TransferManager.ResourceKind.Item;
+            SilkUi.Text(new Rect(rightX, panel.y + 118f * s, rightW * 0.42f, 20f * s),
+                (itemsMode ? Texts.ItemsHeader : Texts.AmountHeader).ToUpperInvariant(),
+                SilkUi.Section, UiKit.Gold);
 
             float tabW = 82f * s;
             Rect beadsTab = new Rect(rightX + rightW - tabW * 3f - 12f * s, panel.y + 112f * s, tabW, 26f * s);
@@ -572,12 +642,12 @@ namespace RosaryShare
             bool bh, bf, sh, sf, ih, inf;
             if (Control(FocusBeads, beadsTab, false, out bh, out bf)) { _resource = TransferManager.ResourceKind.Beads; ClampAmountToBalance(); }
             if (Control(FocusShards, shardsTab, false, out sh, out sf)) { _resource = TransferManager.ResourceKind.Shards; ClampAmountToBalance(); }
-            if (Control(FocusItems, itemsTab, false, out ih, out inf)) { _resource = TransferManager.ResourceKind.Item; SelectCurrentItem(); }
+            if (Control(FocusItems, itemsTab, false, out ih, out inf)) { _resource = TransferManager.ResourceKind.Item; SyncItemSelection(); }
             SilkUi.SmallButton(beadsTab, Texts.T("Бусины", "Beads"), _resource == TransferManager.ResourceKind.Beads, bh, bf, true, s);
             SilkUi.SmallButton(shardsTab, Texts.T("Осколки", "Shards"), _resource == TransferManager.ResourceKind.Shards, sh, sf, true, s);
-            SilkUi.SmallButton(itemsTab, Texts.T("Вещи", "Items"), _resource == TransferManager.ResourceKind.Item, ih, inf, true, s);
+            SilkUi.SmallButton(itemsTab, Texts.ItemsTab, _resource == TransferManager.ResourceKind.Item, ih, inf, true, s);
 
-            if (_resource == TransferManager.ResourceKind.Item) { DrawItemPicker(panel, s, rightX, rightW); return; }
+            if (itemsMode) { DrawItemGrid(panel, s, rightX, rightW); return; }
 
             // --- пресеты ---
             int buttons = PresetAmounts.Length + 1;
@@ -627,62 +697,215 @@ namespace RosaryShare
             SilkUi.Text(availableRect, string.Format(Texts.AvailableFormat, EffectiveBalance()), SilkUi.Hint, UiKit.BoneDim);
         }
 
-        private void DrawItemPicker(Rect panel, float s, float rightX, float rightW)
+        /// <summary>
+        /// Инвентарь-решётка: квадратные ячейки с иконками и количеством, как в
+        /// обычном инвентаре (или в «сталкерском» рюкзаке). Показываются только
+        /// безопасные вещи, которые сейчас есть у игрока; выбор — мышью, стрелками
+        /// или геймпадом, прокрутка — колесом либо выходом за нижний ряд.
+        /// </summary>
+        private void DrawItemGrid(Rect panel, float s, float rightX, float rightW)
         {
-            IReadOnlyList<ItemBridge.ItemEntry> items = ItemBridge.Items;
-            if (items.Count == 0)
+            RefreshItemView(false);
+            int count = _itemView.Count;
+
+            float gap = SlotGap * s;
+            float lane = ScrollLaneW * s;
+            float slot = (rightW - lane - gap * (GridCols - 1)) / GridCols;
+            float gridH = GridRows * slot + (GridRows - 1) * gap;
+
+            Rect grid = new Rect(rightX, panel.y + GridTop * s, rightW - lane, gridH);
+            _gridRect = new Rect(rightX, grid.y, rightW, gridH);
+
+            SilkUi.Well(new Rect(grid.x - 5f * s, grid.y - 5f * s, _gridRect.width + 10f * s, gridH + 10f * s), s);
+
+            int rows = Mathf.Max(1, (count + GridCols - 1) / GridCols);
+            int maxOffset = Mathf.Max(0, rows - GridRows);
+            _itemRowOffset = Mathf.Clamp(_itemRowOffset, 0, maxOffset);
+
+            // держим в поле зрения ту ячейку, на которой стоит фокус геймпада
+            int focusedIndex = FocusedSlotIndex();
+            if (focusedIndex >= 0 && count > 0)
+                EnsureSlotVisible(Mathf.Min(focusedIndex, count - 1), maxOffset);
+
+            int hovered = -1;
+            for (int row = 0; row < GridRows; row++)
             {
-                SilkUi.Text(new Rect(rightX, panel.y + 150f * s, rightW, 50f * s), Texts.T("Предметы не найдены", "No items found"), SilkUi.Empty, UiKit.BoneDim);
-                return;
+                for (int col = 0; col < GridCols; col++)
+                {
+                    int index = (row + _itemRowOffset) * GridCols + col;
+                    Rect cell = new Rect(
+                        Mathf.Round(grid.x + col * (slot + gap)),
+                        Mathf.Round(grid.y + row * (slot + gap)),
+                        Mathf.Round(slot), Mathf.Round(slot));
+
+                    if (index >= count)
+                    {
+                        SilkUi.Slot(cell, false, false, false, false, s);
+                        continue;
+                    }
+
+                    ItemBridge.ItemEntry entry = _itemView[index];
+                    bool hover, focused;
+                    bool clicked = Control(ItemPrefix + index, cell, false, out hover, out focused);
+                    bool selected = entry.Key == _itemKey;
+
+                    SilkUi.Slot(cell, true, selected, hover, focused, s);
+                    DrawSlotContent(cell, entry, s);
+
+                    if (hover) hovered = index;
+                    if (clicked) SelectItem(entry.Key);
+                }
             }
-            _itemIndex = Mathf.Clamp(_itemIndex, 0, items.Count - 1);
-            ItemBridge.ItemEntry item = items[_itemIndex];
-            Rect prev = new Rect(rightX, panel.y + 148f * s, 42f * s, 38f * s);
-            Rect next = new Rect(rightX + rightW - 42f * s, prev.y, 42f * s, prev.height);
-            bool ph, pf, nh, nf;
-            if (Control(FocusItemPrev, prev, false, out ph, out pf)) { _itemIndex = (_itemIndex + items.Count - 1) % items.Count; SelectCurrentItem(); }
-            if (Control(FocusItemNext, next, false, out nh, out nf)) { _itemIndex = (_itemIndex + 1) % items.Count; SelectCurrentItem(); }
-            SilkUi.SmallButton(prev, "◀", false, ph, pf, true, s);
-            SilkUi.SmallButton(next, "▶", false, nh, nf, true, s);
 
-            Rect itemWell = new Rect(prev.xMax + 6f * s, prev.y, rightW - 96f * s, prev.height);
-            SilkUi.Well(itemWell, s);
+            SilkUi.ScrollLane(new Rect(_gridRect.xMax - lane + 2f * s, grid.y, lane - 2f * s, gridH),
+                _itemRowOffset, GridRows, rows, s);
 
-            // Every discovered inventory entry has its own small item sprite.
-            // Keep it inside the selector so the gamepad user can identify an
-            // item without opening the native inventory screen.
-            float iconSize = Mathf.Max(18f * s, itemWell.height - 6f * s);
-            Rect iconRect = new Rect(itemWell.x + 3f * s, itemWell.y + (itemWell.height - iconSize) * 0.5f,
-                iconSize, iconSize);
-            if (item.Sprite != null)
-                SilkUi.Sprite(iconRect, item.Sprite, Color.white);
-            else if (item.FallbackSprite != null)
-                SilkUi.Fill(iconRect, item.FallbackSprite, Color.white);
+            // счётчик вещей — справа от заголовка, но левее вкладок ресурсов
+            if (count > 0)
+            {
+                SilkUi.Text(new Rect(rightX, panel.y + 118f * s, rightW - 268f * s, 20f * s),
+                    string.Format(Texts.ItemsCountFormat, count), SilkUi.ItemRight, UiKit.BoneDim);
+            }
 
-            SilkUi.Text(new Rect(iconRect.xMax + 6f * s, itemWell.y, itemWell.width - iconSize - 12f * s, itemWell.height),
-                item.Name + "  [" + item.Category + "]", SilkUi.Item, UiKit.Bone);
+            // ---- описание выбранной (или наведённой) вещи ----
+            ItemBridge.ItemEntry shown = hovered >= 0 ? _itemView[hovered] : ItemBridge.Find(_itemKey);
+            Rect bar = new Rect(rightX, grid.yMax + 8f * s, rightW, 34f * s);
+            SilkUi.Well(bar, s);
 
-            float y = panel.y + 196f * s;
-            Rect minus = new Rect(rightX, y, 42f * s, 34f * s);
-            Rect field = new Rect(minus.xMax + 6f * s, y, 110f * s, 34f * s);
-            Rect plus = new Rect(field.xMax + 6f * s, y, 42f * s, 34f * s);
-            bool mh, mf, xh, xf;
+            if (count == 0)
+            {
+                SilkUi.Text(grid, Texts.NoItems, SilkUi.Empty, UiKit.BoneDim);
+                SilkUi.Text(bar, Texts.SafeOnly, SilkUi.Empty, UiKit.BoneDim);
+            }
+            else if (shown == null)
+            {
+                SilkUi.Text(bar, Texts.PickItem, SilkUi.Empty, UiKit.BoneDim);
+            }
+            else
+            {
+                float icon = bar.height - 8f * s;
+                Rect iconRect = new Rect(bar.x + 5f * s, bar.y + 4f * s, icon, icon);
+                DrawItemIcon(iconRect, shown);
+
+                int owned = shown.Amount;
+                string tail = shown.Unique ? Texts.ItemUnique : "× " + owned;
+                Rect nameRect = new Rect(iconRect.xMax + 8f * s, bar.y, bar.width - icon - 140f * s, bar.height);
+                SilkUi.Text(nameRect, SilkUi.Ellipsize(shown.Name, SilkUi.Item, nameRect.width), SilkUi.Item, UiKit.Bone);
+                SilkUi.Text(new Rect(bar.xMax - 112f * s, bar.y, 102f * s, bar.height),
+                    shown.Category + "   " + tail, SilkUi.ItemRight, UiKit.Gold);
+
+                if (hovered >= 0)
+                {
+                    _tipTitle = shown.Name;
+                    _tipLine = shown.Category + "  ·  " + (shown.Unique ? Texts.ItemUnique : "× " + owned);
+                    _tipAt = Event.current.mousePosition;
+                }
+            }
+
+            // ---- сколько передаём ----
+            float y = bar.yMax + 6f * s;
+            float stepW = 42f * s;
+            float fieldW = 96f * s;
+
+            Rect minus = new Rect(rightX, y, stepW, 34f * s);
+            Rect field = new Rect(minus.xMax + 6f * s, y, fieldW, 34f * s);
+            Rect plus = new Rect(field.xMax + 6f * s, y, stepW, 34f * s);
+            Rect all = new Rect(plus.xMax + 10f * s, y, 64f * s, 34f * s);
+
+            bool mh, mf, xh, xf, ah, af;
             if (Control(FocusMinus, minus, true, out mh, out mf)) StepAmount(-1);
             DrawAmountField(field, s);
             if (Control(FocusPlus, plus, true, out xh, out xf)) StepAmount(1);
-            SilkUi.SmallButton(minus, "−", false, mh, mf, true, s);
-            SilkUi.SmallButton(plus, "+", false, xh, xf, true, s);
-            SilkUi.Text(new Rect(plus.xMax + 12f * s, y, rightW - 220f * s, 34f * s),
+            if (Control(FocusItemAll, all, false, out ah, out af)) SetAmount(Mathf.Min(EffectiveBalance(), ModConfig.MaxSendAmount));
+
+            bool hasStack = EffectiveBalance() > 0;
+            SilkUi.SmallButton(minus, "−", false, mh, mf, hasStack, s);
+            SilkUi.SmallButton(plus, "+", false, xh, xf, hasStack, s);
+            SilkUi.SmallButton(all, Texts.AllBeads, hasStack && _amount == EffectiveBalance(), ah, af, hasStack, s);
+
+            SilkUi.Text(new Rect(all.xMax + 12f * s, y, rightW - (all.xMax - rightX) - 12f * s, 34f * s),
                 string.Format(Texts.AvailableFormat, EffectiveBalance()), SilkUi.Hint, UiKit.BoneDim);
         }
 
-        private void SelectCurrentItem()
+        /// <summary>
+        /// Пересобирает список вещей в руках. Чтение PlayerData идёт через
+        /// рефлексию, поэтому не чаще нескольких раз в секунду — на глаз это
+        /// незаметно, а кадр не грузит.
+        /// </summary>
+        private void RefreshItemView(bool force)
         {
-            IReadOnlyList<ItemBridge.ItemEntry> items = ItemBridge.Items;
-            if (items.Count == 0) { SetAmount(0); return; }
-            _itemIndex = Mathf.Clamp(_itemIndex, 0, items.Count - 1);
-            int available = ItemBridge.Count(items[_itemIndex].Key);
-            SetAmount(available > 0 ? 1 : 0);
+            float now = Time.unscaledTime;
+            if (!force && now - _itemViewAt < 0.25f) return;
+
+            _itemViewAt = now;
+            ItemBridge.CollectOwned(_itemView);
+        }
+
+        private static void DrawItemIcon(Rect rect, ItemBridge.ItemEntry entry)
+        {
+            if (entry == null) return;
+            if (entry.Sprite != null) SilkUi.Sprite(rect, entry.Sprite, Color.white);
+            else if (entry.FallbackSprite != null) SilkUi.Fill(rect, entry.FallbackSprite, Color.white);
+        }
+
+        /// <summary>Иконка вещи и количество в углу ячейки.</summary>
+        private static void DrawSlotContent(Rect cell, ItemBridge.ItemEntry entry, float s)
+        {
+            float pad = 6f * s;
+            DrawItemIcon(new Rect(cell.x + pad, cell.y + pad, cell.width - pad * 2f, cell.height - pad * 2f), entry);
+
+            int owned = entry.Amount;
+            if (entry.Unique || owned <= 1) return;
+
+            Rect badge = new Rect(cell.x + 4f * s, cell.yMax - 17f * s, cell.width - 8f * s, 14f * s);
+            SilkUi.Text(badge, "×" + owned, SilkUi.Badge, UiKit.Gold);
+        }
+
+        private int FocusedSlotIndex()
+        {
+            if (string.IsNullOrEmpty(_focusId) || !_focusId.StartsWith(ItemPrefix, StringComparison.Ordinal)) return -1;
+            int index;
+            return int.TryParse(_focusId.Substring(ItemPrefix.Length), out index) ? index : -1;
+        }
+
+        private void EnsureSlotVisible(int index, int maxOffset)
+        {
+            int row = index / GridCols;
+            if (row < _itemRowOffset) _itemRowOffset = row;
+            else if (row >= _itemRowOffset + GridRows) _itemRowOffset = row - GridRows + 1;
+            _itemRowOffset = Mathf.Clamp(_itemRowOffset, 0, maxOffset);
+        }
+
+        /// <summary>Выбирает вещь по ключу и подставляет разумное количество.</summary>
+        private void SelectItem(string key)
+        {
+            _itemKey = key ?? string.Empty;
+            int available = ItemBridge.Count(_itemKey);
+            SetAmount(available > 0 ? Mathf.Min(1, available) : 0);
+        }
+
+        /// <summary>
+        /// Следит, чтобы выбранная вещь существовала: состав решётки меняется
+        /// (вещь передали, вещь подобрали), поэтому выбор хранится ключом.
+        /// </summary>
+        private void SyncItemSelection()
+        {
+            RefreshItemView(true);
+            if (_itemView.Count == 0)
+            {
+                _itemKey = string.Empty;
+                SetAmount(0);
+                return;
+            }
+
+            for (int i = 0; i < _itemView.Count; i++)
+                if (_itemView[i].Key == _itemKey)
+                {
+                    SelectItem(_itemKey);
+                    return;
+                }
+
+            SelectItem(_itemView[0].Key);
         }
 
         private void DrawAmountField(Rect rect, float s)
@@ -725,24 +948,32 @@ namespace RosaryShare
             float rightW = panel.width - (Pad + ListW + ColGap) * s - Pad * s;
 
             TransferManager.RemotePlayer target = ResolveSelection();
-            bool ready = target != null && _amount > 0;
+            bool itemsMode = _resource == TransferManager.ResourceKind.Item;
+            bool ready = target != null && _amount > 0 && (!itemsMode || !string.IsNullOrEmpty(_itemKey));
+
+            string what = _amount.ToString();
+            if (itemsMode && !string.IsNullOrEmpty(_itemKey))
+                what = _amount + " × " + ItemBridge.NameOf(_itemKey);
 
             string label = ready
-                ? string.Format(Texts.SendFormat, _amount, SilkUi.Ellipsize(target.Name, SilkUi.Send, rightW * 0.45f))
-                : Texts.ChoosePrompt;
+                ? string.Format(Texts.SendFormat, what, SilkUi.Ellipsize(target.Name, SilkUi.Send, rightW * 0.30f))
+                : (itemsMode && string.IsNullOrEmpty(_itemKey) ? Texts.PickItem : Texts.ChoosePrompt);
 
-            Rect rect = new Rect(rightX, panel.y + 232f * s, rightW, 54f * s);
+            Rect rect = new Rect(rightX, panel.y + (232f + _extra) * s, rightW, 54f * s);
             bool hover, focused;
             bool clicked = Control(FocusSend, rect, false, out hover, out focused);
-            SilkUi.OrnateButton(rect, label, ready, hover, focused, s);
+            SilkUi.OrnateButton(rect, SilkUi.Ellipsize(label, SilkUi.Send, rect.width - 28f * s), ready, hover, focused, s);
             if (clicked) Send();
 
-            string hint = ModConfig.QuickSendCombo != null
-                ? string.Format("{0} / {1} — {2} ({3})", ModConfig.QuickSendKeyCode, ModConfig.QuickSendCombo.Text,
-                    Texts.HintQuickSend.ToLowerInvariant(), ModConfig.QuickSendAmount)
-                : string.Format("{0} — {1} ({2})", ModConfig.QuickSendKeyCode, Texts.HintQuickSend.ToLowerInvariant(), ModConfig.QuickSendAmount);
+            string hint = itemsMode
+                ? Texts.SafeNote
+                : (ModConfig.QuickSendCombo != null
+                    ? string.Format("{0} / {1} — {2} ({3})", ModConfig.QuickSendKeyCode, ModConfig.QuickSendCombo.Text,
+                        Texts.HintQuickSend.ToLowerInvariant(), ModConfig.QuickSendAmount)
+                    : string.Format("{0} — {1} ({2})", ModConfig.QuickSendKeyCode, Texts.HintQuickSend.ToLowerInvariant(), ModConfig.QuickSendAmount));
 
-            SilkUi.Text(new Rect(rightX, panel.y + 292f * s, rightW, 18f * s), hint, SilkUi.Hint, UiKit.BoneDim);
+            Rect hintRect = new Rect(rightX, panel.y + (292f + _extra) * s, rightW, 18f * s);
+            SilkUi.Text(hintRect, SilkUi.Ellipsize(hint, SilkUi.Hint, hintRect.width), SilkUi.Hint, UiKit.BoneDim);
         }
 
         private void DrawJournal(Rect panel, float s)
@@ -751,13 +982,13 @@ namespace RosaryShare
             float x0 = panel.x + Pad * s;
             float width = panel.width - Pad * s * 2f;
 
-            SilkUi.Divider(new Rect(x0, panel.y + 348f * s, width, Mathf.Max(1f, s)),
+            SilkUi.Divider(new Rect(x0, panel.y + (348f + _extra) * s, width, Mathf.Max(1f, s)),
                 new Color(UiKit.GoldDim.r, UiKit.GoldDim.g, UiKit.GoldDim.b, 0.65f), true);
 
-            SilkUi.Text(new Rect(x0, panel.y + 362f * s, width, 20f * s),
+            SilkUi.Text(new Rect(x0, panel.y + (362f + _extra) * s, width, 20f * s),
                 Texts.HistoryHeader.ToUpperInvariant(), SilkUi.Section, UiKit.Gold);
 
-            Rect well = new Rect(x0, panel.y + 386f * s, width, 126f * s);
+            Rect well = new Rect(x0, panel.y + (386f + _extra) * s, width, 126f * s);
             SilkUi.Well(well, s);
 
             if (mgr == null || mgr.History.Count == 0)
@@ -808,7 +1039,7 @@ namespace RosaryShare
         private void DrawFooter(Rect panel, float s)
         {
             float x0 = panel.x + Pad * s;
-            float y = panel.y + 538f * s;
+            float y = panel.y + (538f + _extra) * s;
 
             // кнопка закрытия справа
             Rect close = new Rect(panel.xMax - (Pad + 150f) * s, y - 16f * s, 150f * s, 32f * s);
@@ -946,6 +1177,31 @@ namespace RosaryShare
                 }
             }
 
+            // внутри решётки предметов ходим по ячейкам, а не «по геометрии»:
+            // влево/вправо — соседняя вещь, вверх/вниз — ряд выше/ниже
+            int slotIndex = FocusedSlotIndex();
+            if (slotIndex >= 0 && _itemView.Count > 0)
+            {
+                int count = _itemView.Count;
+                int rows = Mathf.Max(1, (count + GridCols - 1) / GridCols);
+                int maxOffset = Mathf.Max(0, rows - GridRows);
+                int next = slotIndex + (dx != 0 ? dx : dy * GridCols);
+
+                if (next >= 0 && next < count)
+                {
+                    SelectSlot(next, maxOffset);
+                    return;
+                }
+
+                // вниз с последнего неполного ряда — встаём на последнюю вещь,
+                // и только потом фокус уходит из решётки к количеству
+                if (dy > 0 && next >= count && slotIndex < count - 1)
+                {
+                    SelectSlot(count - 1, maxOffset);
+                    return;
+                }
+            }
+
             Rect current = FindFocusRect(_focusId);
             if (current.width <= 0f)
             {
@@ -993,12 +1249,33 @@ namespace RosaryShare
         {
             _focusId = id;
 
-            if (!string.IsNullOrEmpty(id) && id.StartsWith(PlayerPrefix, StringComparison.Ordinal))
+            if (string.IsNullOrEmpty(id)) return;
+
+            if (id.StartsWith(PlayerPrefix, StringComparison.Ordinal))
             {
                 int index;
                 if (int.TryParse(id.Substring(PlayerPrefix.Length), out index))
                     SelectPlayer(index);
+                return;
             }
+
+            if (id.StartsWith(ItemPrefix, StringComparison.Ordinal))
+            {
+                int index;
+                if (int.TryParse(id.Substring(ItemPrefix.Length), out index) &&
+                    index >= 0 && index < _itemView.Count)
+                    SelectItem(_itemView[index].Key);
+            }
+        }
+
+        /// <summary>Переводит фокус на ячейку решётки и сразу выбирает её вещь.</summary>
+        private void SelectSlot(int index, int maxOffset)
+        {
+            if (index < 0 || index >= _itemView.Count) return;
+
+            _focusId = ItemPrefix + index;
+            EnsureSlotVisible(index, maxOffset);
+            SelectItem(_itemView[index].Key);
         }
 
         private void SelectPlayer(int index)
@@ -1028,9 +1305,14 @@ namespace RosaryShare
             int delta = Event.current.delta.y > 0f ? 1 : -1;
 
             Rect list = new Rect(panel.x + Pad * s, panel.y + 142f * s, ListW * s, RowH * VisiblePlayers * s);
-            Rect journal = new Rect(panel.x + Pad * s, panel.y + 386f * s, panel.width - Pad * s * 2f, 126f * s);
+            Rect journal = new Rect(panel.x + Pad * s, panel.y + (386f + _extra) * s, panel.width - Pad * s * 2f, 126f * s);
 
-            if (list.Contains(mouse))
+            if (_resource == TransferManager.ResourceKind.Item && _gridRect.Contains(mouse))
+            {
+                ScrollGrid(delta);
+                Event.current.Use();
+            }
+            else if (list.Contains(mouse))
             {
                 TransferManager mgr = TransferManager.Instance;
                 int count = mgr != null ? mgr.Players.Count : 0;
@@ -1042,6 +1324,13 @@ namespace RosaryShare
                 ScrollLog(-delta);
                 Event.current.Use();
             }
+        }
+
+        /// <summary>Прокрутка решётки предметов построчно.</summary>
+        private void ScrollGrid(int delta)
+        {
+            int rows = Mathf.Max(1, (_itemView.Count + GridCols - 1) / GridCols);
+            _itemRowOffset = Mathf.Clamp(_itemRowOffset + delta, 0, Mathf.Max(0, rows - GridRows));
         }
 
         private void ScrollLog(int delta)
@@ -1057,10 +1346,7 @@ namespace RosaryShare
         {
             if (_resource == TransferManager.ResourceKind.Shards) return GameBridge.GetShards();
             if (_resource == TransferManager.ResourceKind.Item)
-            {
-                IReadOnlyList<ItemBridge.ItemEntry> items = ItemBridge.Items;
-                return items.Count > 0 && _itemIndex < items.Count ? ItemBridge.Count(items[_itemIndex].Key) : 0;
-            }
+                return string.IsNullOrEmpty(_itemKey) ? 0 : ItemBridge.Count(_itemKey);
             return GameBridge.GetGeo();
         }
 
@@ -1079,7 +1365,10 @@ namespace RosaryShare
 
         private void StepAmount(int direction)
         {
-            int step = _amount < 200 ? 10 : (_amount < 2000 ? 50 : (_amount < 20000 ? 250 : 1000));
+            // у вещей стопки маленькие — шагаем по одной штуке
+            int step = _resource == TransferManager.ResourceKind.Item
+                ? 1
+                : (_amount < 200 ? 10 : (_amount < 2000 ? 50 : (_amount < 20000 ? 250 : 1000)));
             int cap = EffectiveBalance();
             if (cap <= 0)
             {
@@ -1092,6 +1381,13 @@ namespace RosaryShare
 
         private void CyclePreset(int direction)
         {
+            // у вещей «пресеты сумм» не нужны — бампер меняет количество на единицу
+            if (_resource == TransferManager.ResourceKind.Item)
+            {
+                StepAmount(direction);
+                return;
+            }
+
             int index = -1;
             for (int i = 0; i < PresetAmounts.Length; i++)
                 if (_amount == PresetAmounts[i]) index = i;

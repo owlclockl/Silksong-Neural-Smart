@@ -27,6 +27,15 @@ namespace RosaryShare
         public static GUIStyle Log;
         public static GUIStyle Empty;
 
+        /// <summary>Мелкая подпись количества в углу ячейки инвентаря.</summary>
+        public static GUIStyle Badge;
+
+        /// <summary>Заголовок всплывающей подсказки предмета.</summary>
+        public static GUIStyle TipTitle;
+
+        /// <summary>Пояснение во всплывающей подсказке предмета.</summary>
+        public static GUIStyle TipLine;
+
         private static float _builtScale = -1f;
 
         /// <summary>Пересобирает стили, если изменился масштаб (вызывать только из OnGUI).</summary>
@@ -52,6 +61,10 @@ namespace RosaryShare
             Log = Label(skin, font, 13, scale, TextAnchor.MiddleLeft);
             Log.wordWrap = false;
             Log.clipping = TextClipping.Clip;
+
+            Badge = Label(skin, font, 13, scale, TextAnchor.MiddleRight);
+            TipTitle = Label(skin, font, 15, scale, TextAnchor.MiddleLeft);
+            TipLine = Label(skin, font, 12, scale, TextAnchor.MiddleLeft);
 
             Field = new GUIStyle(skin.textField);
             if (font != null) Field.font = font;
@@ -249,6 +262,99 @@ namespace RosaryShare
 
             if (selected)
                 Diamond(new Vector2(rect.x + pad * 0.5f, rect.center.y), 8f * scale, UiKit.Crimson);
+        }
+
+        /// <summary>
+        /// Ячейка инвентарной решётки (как в «сталкерском» инвентаре):
+        /// углублённый квадрат с резной рамкой. Пустые ячейки рисуются
+        /// тусклыми, занятые — чуть светлее, выбранная — багровым шёлком.
+        /// </summary>
+        public static void Slot(Rect rect, bool occupied, bool selected, bool hover, bool focused, float scale)
+        {
+            float t = Mathf.Max(1f, scale);
+
+            if (selected)
+            {
+                Fill(rect, UiKit.SilkFill, Color.white);
+                FillColor(rect, new Color(UiKit.Crimson.r, UiKit.Crimson.g, UiKit.Crimson.b, 0.22f));
+            }
+            else
+            {
+                FillColor(rect, new Color(0f, 0f, 0f, occupied ? (hover || focused ? 0.46f : 0.34f) : 0.22f));
+            }
+
+            Color border;
+            if (selected) border = new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.98f);
+            else if (hover || focused) border = new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.72f);
+            else if (occupied) border = new Color(UiKit.GoldDim.r, UiKit.GoldDim.g, UiKit.GoldDim.b, 0.55f);
+            else border = new Color(UiKit.GoldDim.r, UiKit.GoldDim.g, UiKit.GoldDim.b, 0.24f);
+            Frame(rect, border, t);
+
+            // «засечки» в углах занятой ячейки — мелкая резьба, как на панели
+            if (occupied)
+            {
+                float d = 6f * scale;
+                Color corner = selected
+                    ? new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.95f)
+                    : new Color(UiKit.GoldDim.r, UiKit.GoldDim.g, UiKit.GoldDim.b, 0.75f);
+                Diamond(new Vector2(rect.x, rect.y), d, corner);
+                Diamond(new Vector2(rect.xMax, rect.y), d, corner);
+                Diamond(new Vector2(rect.x, rect.yMax), d, corner);
+                Diamond(new Vector2(rect.xMax, rect.yMax), d, corner);
+            }
+
+            if (focused)
+            {
+                float pulse = 0.62f + 0.38f * Mathf.Sin(Time.unscaledTime * 5.5f);
+                float halo = 12f * scale;
+                Fill(new Rect(rect.x - halo, rect.y - halo, rect.width + halo * 2f, rect.height + halo * 2f),
+                    UiKit.Glow, new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.14f + 0.16f * pulse));
+                Frame(rect, new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.70f + 0.30f * pulse), Mathf.Max(1f, 2f * scale));
+            }
+        }
+
+        /// <summary>Вертикальная полоса прокрутки решётки предметов.</summary>
+        public static void ScrollLane(Rect lane, int offset, int visible, int total, float scale)
+        {
+            if (total <= visible) return;
+
+            FillColor(lane, new Color(0f, 0f, 0f, 0.35f));
+            Frame(lane, new Color(UiKit.GoldDim.r, UiKit.GoldDim.g, UiKit.GoldDim.b, 0.35f), Mathf.Max(1f, scale));
+
+            float ratio = Mathf.Clamp01((float)visible / total);
+            float thumbH = Mathf.Max(10f * scale, lane.height * ratio);
+            float travel = lane.height - thumbH;
+            float position = total - visible > 0 ? (float)offset / (total - visible) : 0f;
+
+            Rect thumb = new Rect(lane.x + 1f, lane.y + travel * Mathf.Clamp01(position), lane.width - 2f, thumbH);
+            FillColor(thumb, new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.65f));
+        }
+
+        /// <summary>Всплывающая подсказка предмета возле курсора.</summary>
+        public static void Tooltip(Vector2 anchor, string title, string line, float scale, Rect bounds)
+        {
+            if (string.IsNullOrEmpty(title)) return;
+
+            float padX = 10f * scale;
+            float padY = 7f * scale;
+            float w = Mathf.Max(TipTitle.CalcSize(new GUIContent(title)).x,
+                string.IsNullOrEmpty(line) ? 0f : TipLine.CalcSize(new GUIContent(line)).x) + padX * 2f;
+            float h = padY * 2f + 18f * scale + (string.IsNullOrEmpty(line) ? 0f : 16f * scale);
+
+            float x = Mathf.Clamp(anchor.x + 18f * scale, bounds.x, Mathf.Max(bounds.x, bounds.xMax - w));
+            float y = Mathf.Clamp(anchor.y + 16f * scale, bounds.y, Mathf.Max(bounds.y, bounds.yMax - h));
+            Rect rect = new Rect(Mathf.Round(x), Mathf.Round(y), Mathf.Round(w), Mathf.Round(h));
+
+            float halo = 14f * scale;
+            Fill(new Rect(rect.x - halo, rect.y - halo, rect.width + halo * 2f, rect.height + halo * 2f),
+                UiKit.Glow, new Color(0f, 0f, 0f, 0.55f));
+            FillColor(rect, new Color(0.05f, 0.04f, 0.055f, 0.96f));
+            Frame(rect, new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.85f), Mathf.Max(1f, scale));
+
+            Text(new Rect(rect.x + padX, rect.y + padY, rect.width - padX * 2f, 18f * scale), title, TipTitle, UiKit.Bone);
+            if (!string.IsNullOrEmpty(line))
+                Text(new Rect(rect.x + padX, rect.y + padY + 18f * scale, rect.width - padX * 2f, 16f * scale),
+                    line, TipLine, UiKit.BoneDim);
         }
 
         /// <summary>Небольшая кнопка-пункт (пресеты сумм, «Закрыть», шаг +/-).</summary>

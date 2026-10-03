@@ -36,6 +36,9 @@ namespace RosaryShare
             public string Category;
             public bool Unique;
 
+            /// <summary>Количество на момент последней сборки решётки инвентаря.</summary>
+            public int Amount;
+
             /// <summary>Оригинальный спрайт предмета из ресурсов игры.</summary>
             public UnityEngine.Sprite Sprite;
 
@@ -252,6 +255,32 @@ namespace RosaryShare
         {
             ItemEntry entry;
             return TryGet(key, out entry) ? entry.Name : key;
+        }
+
+        /// <summary>Запись каталога по ключу (или null) — нужна окну обмена для иконки и подписи.</summary>
+        public static ItemEntry Find(string key)
+        {
+            ItemEntry entry;
+            return TryGet(key, out entry) ? entry : null;
+        }
+
+        /// <summary>
+        /// Заполняет <paramref name="target"/> теми безопасными предметами, которые
+        /// сейчас реально лежат в инвентаре (количество больше нуля). Решётка окна
+        /// показывает именно их: передать можно только то, что есть на руках.
+        /// </summary>
+        public static void CollectOwned(List<ItemEntry> target)
+        {
+            if (target == null) return;
+            target.Clear();
+
+            EnsureCatalog();
+            for (int i = 0; i < ItemsInternal.Count; i++)
+            {
+                ItemEntry entry = ItemsInternal[i];
+                entry.Amount = Count(entry.Key);
+                if (entry.Amount > 0) target.Add(entry);
+            }
         }
 
         private static bool TryGet(string key, out ItemEntry entry)
