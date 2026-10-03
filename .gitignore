@@ -19,3 +19,6 @@ silksong.path.txt
 # OS
 Thumbs.db
 .DS_Store
+
+# Временные файлы агента/поиска
+image-search/

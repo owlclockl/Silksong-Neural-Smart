@@ -7,8 +7,12 @@ RUS:
      <Hollow Knight Silksong>\BepInEx\plugins\
 3. Запустите игру, создайте лобби или встаньте в лобби друга,
    загрузите сохранение.
-4. Нажмите F7 — окно обмена бусинами. Клавиша G — быстрая отправка 100 бусин.
-5. Настройки: BepInEx\config\com.silksong.rosaryshare.cfg
+4. Нажмите F7 (или подержите LB+RB на геймпаде) — откроется меню обмена
+   бусинами в стиле игры, со своим курсором мыши.
+   Клавиша G — быстрая отправка 100 бусин.
+5. Управление геймпадом: стик/крестовина — выбор, A — подтвердить,
+   B — закрыть, LB/RB — сумма, X — все бусины, LT/RT — журнал.
+6. Настройки: BepInEx\config\com.silksong.rosaryshare.cfg
 
 Бусины не пропадают: если получатель недоступен, сумма автоматически
 возвращается отправителю.
@@ -18,8 +22,11 @@ ENG:
 2. Copy RosaryShare.dll into:
      <Hollow Knight Silksong>\BepInEx\plugins\
 3. Launch the game, host or join a Steam lobby, load a save.
-4. Press F7 for the bead sharing window. G quick-sends 100 beads.
-5. Settings: BepInEx/config/com.silksong.rosaryshare.cfg
+4. Press F7 (or hold LB+RB on a gamepad) for the Silksong-styled bead
+   sharing menu with its own mouse cursor. G quick-sends 100 beads.
+5. Gamepad: stick/D-pad to navigate, A to confirm, B to close,
+   LB/RB for the amount, X for all beads, LT/RT to scroll the journal.
+6. Settings: BepInEx/config/com.silksong.rosaryshare.cfg
 
 No lost beads: if the recipient is unavailable, the amount is
 automatically refunded to the sender.

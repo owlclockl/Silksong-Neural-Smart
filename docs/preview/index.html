@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RosaryShare — предпросмотр меню</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #07070a; overflow: hidden;
+               font-family: Georgia, "Times New Roman", serif; color: #cfcac0; }
+  #stage { position: absolute; inset: 0; }
+  canvas { display: block; width: 100%; height: 100%; cursor: none; }
+  canvas.system-cursor { cursor: default; }
+  #bar { position: absolute; left: 0; right: 0; top: 0; display: flex; gap: 10px; flex-wrap: wrap;
+         align-items: center; padding: 8px 14px; font-size: 13px; letter-spacing: .04em;
+         background: linear-gradient(180deg, rgba(8,7,10,.92), rgba(8,7,10,0)); z-index: 5; }
+  #bar b { color: #dfb871; font-weight: normal; letter-spacing: .14em; text-transform: uppercase; }
+  button, select { font: inherit; font-size: 12px; color: #e4ded2; background: rgba(0,0,0,.45);
+                   border: 1px solid rgba(143,119,73,.65); padding: 4px 10px; cursor: pointer; }
+  button:hover { border-color: #dfb871; }
+  #hint { position: absolute; left: 14px; bottom: 10px; font-size: 12px; opacity: .55; z-index: 5; }
+  #pad { color: #8de08d; }
+  #pad.off { color: #6a6a6a; }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+
+<div id="bar">
+  <b>RosaryShare</b>
+  <span style="opacity:.6">предпросмотр игрового меню</span>
+  <button id="btnCursor">Курсор: Soft</button>
+  <button id="btnScale">Масштаб: 1.0</button>
+  <button id="btnLang">Язык: RU</button>
+  <span id="pad" class="off">геймпад: не найден</span>
+</div>
+
+<div id="hint">
+  Мышь — наведение и выбор · Стрелки/Enter — навигация · Геймпад: стик/крестовина, A, B, LB/RB, X
+</div>
+
+<script>
+"use strict";
+
+// ======================================================================
+//  Палитра и геометрия — те же числа, что в UiKit.cs / TransferWindow.cs
+// ======================================================================
+
+const C = {
+  bone:      [0.945, 0.918, 0.855],
+  boneSoft:  [0.760, 0.735, 0.685],
+  boneDim:   [0.545, 0.525, 0.495],
+  gold:      [0.878, 0.745, 0.455],
+  goldDim:   [0.560, 0.465, 0.285],
+  crimson:   [0.725, 0.165, 0.205],
+  ink:       [0.047, 0.043, 0.055],
+  success:   [0.600, 0.880, 0.620],
+  warn:      [0.960, 0.800, 0.420],
+  error:     [0.930, 0.420, 0.400],
+};
+const rgba = (c, a = 1) =>
+  `rgba(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)},${a})`;
+
+const L = {                 // макет из TransferWindow.cs
+  panelW: 820, panelH: 580, pad: 30, listW: 300, colGap: 24,
+  rowH: 33, logLineH: 22, visiblePlayers: 6,
+};
+
+const FONT = '"Georgia", "Times New Roman", serif';
+const sizes = { title: 25, balance: 16, status: 13, section: 14, item: 16,
+                centered: 16, send: 19, hint: 12, log: 13, empty: 14 };
+
+// ======================================================================
+//  Процедурные текстуры (точный порт шейдеров из UiKit.cs)
+// ======================================================================
+
+function texture(w, h, shade) {
+  const cv = document.createElement("canvas");
+  cv.width = w; cv.height = h;
+  const ctx = cv.getContext("2d");
+  const img = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    const v = h > 1 ? y / (h - 1) : 0;         // v = 0 — низ текстуры
+    for (let x = 0; x < w; x++) {
+      const u = w > 1 ? x / (w - 1) : 0;
+      const col = shade(u, v);
+      const i = ((h - 1 - y) * w + x) * 4;     // canvas рисует сверху вниз
+      img.data[i]     = Math.max(0, Math.min(255, col[0] * 255));
+      img.data[i + 1] = Math.max(0, Math.min(255, col[1] * 255));
+      img.data[i + 2] = Math.max(0, Math.min(255, col[2] * 255));
+      img.data[i + 3] = Math.max(0, Math.min(255, col[3] * 255));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return cv;
+}
+
+const smooth = t => { t = Math.min(1, Math.max(0, t)); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp01 = t => Math.min(1, Math.max(0, t));
+const noise = (x, y) => { const v = Math.sin(x * 12.9898 + y * 78.233) * 43758.5453; return v - Math.floor(v); };
+
+const TEX = {};
+TEX.panel = texture(8, 160, (u, v) => {
+  const t = smooth(v);
+  const centre = 1 - Math.abs(u - 0.5) * 2;
+  const lift = centre * centre * 0.018;
+  return [lerp(0.038, 0.105, t) + lift, lerp(0.034, 0.088, t) + lift * 0.9,
+          lerp(0.045, 0.098, t) + lift, 0.965];
+});
+TEX.grain = texture(64, 64, (u, v) => {
+  const n = noise(u * 64, v * 64), n2 = noise(u * 64 * 0.37 + 11.3, v * 64 * 0.37 + 7.7);
+  let a = (n * 0.65 + n2 * 0.35); a = (a - 0.5) * 2;
+  return a > 0 ? [0.85, 0.80, 0.72, a * 0.030] : [0, 0, 0, -a * 0.055];
+});
+TEX.vignette = texture(128, 128, (u, v) => {
+  const dx = (u - 0.5) * 2, dy = (v - 0.5) * 2;
+  const d = Math.sqrt(dx * dx + dy * dy) / 1.4142;
+  const a = clamp01((d - 0.18) / 0.82);
+  return [0.01, 0.01, 0.015, a * a * 0.92];
+});
+TEX.glow = texture(64, 64, (u, v) => {
+  const dx = (u - 0.5) * 2, dy = (v - 0.5) * 2;
+  const d = Math.min(1, Math.sqrt(dx * dx + dy * dy));
+  const a = 1 - d;
+  return [1, 1, 1, a * a * a];
+});
+TEX.rowSelected = texture(64, 8, (u, v) => {
+  const fade = Math.pow(1 - u, 1.6), edge = 1 - Math.abs(v - 0.5) * 2;
+  return [0.52, 0.12, 0.16, fade * (0.42 + edge * 0.24)];
+});
+TEX.rowHover = texture(64, 8, u => [0.92, 0.88, 0.80, Math.pow(1 - u, 2.0) * 0.125]);
+TEX.silkFill = texture(8, 48, (u, v) => {
+  const t = smooth(v);
+  return [lerp(0.215, 0.470, t), lerp(0.038, 0.090, t), lerp(0.055, 0.115, t), 0.95];
+});
+TEX.fieldFill = texture(8, 32, (u, v) => {
+  const g = lerp(0.085, 0.045, smooth(v));
+  return [g * 0.92, g * 0.88, g, 0.95];
+});
+TEX.divider = texture(128, 1, u => {
+  const a = Math.pow(clamp01(Math.sin(u * Math.PI)), 0.7);
+  return [0.70, 0.58, 0.34, a];
+});
+TEX.diamond = texture(32, 32, (u, v) => {
+  const d = Math.abs(u - 0.5) + Math.abs(v - 0.5);
+  return [1, 1, 1, 1 - clamp01((d - 0.34) / 0.06)];
+});
+
+// курсор-игла с бусиной — порт UiKit.ShadeCursor
+const CURSOR_SIZE = 40, HOTSPOT = 3;
+function over(dst, src, alpha) {
+  const a = clamp01(src[3] * clamp01(alpha));
+  if (a <= 0) return dst;
+  const outA = a + dst[3] * (1 - a);
+  if (outA <= 0) return [0, 0, 0, 0];
+  return [(src[0] * a + dst[0] * dst[3] * (1 - a)) / outA,
+          (src[1] * a + dst[1] * dst[3] * (1 - a)) / outA,
+          (src[2] * a + dst[2] * dst[3] * (1 - a)) / outA, outA];
+}
+function distSeg(px, py, ax, ay, bx, by) {
+  const vx = bx - ax, vy = by - ay, wx = px - ax, wy = py - ay;
+  const len = vx * vx + vy * vy;
+  const t = len > 0 ? clamp01((wx * vx + wy * vy) / len) : 0;
+  const cx = ax + vx * t, cy = ay + vy * t;
+  return [Math.hypot(px - cx, py - cy), t];
+}
+TEX.cursor = texture(CURSOR_SIZE, CURSOR_SIZE, (u, v) => {
+  const x = u * (CURSOR_SIZE - 1), y = (1 - v) * (CURSOR_SIZE - 1);
+  const [dLine, t] = distSeg(x, y, 3, 3, 25, 25);
+  const halfWidth = lerp(0.15, 2.45, Math.pow(t, 0.75));
+  const body = 1 - clamp01((dLine - halfWidth) / 1.05);
+  const bodyOutline = 1 - clamp01((dLine - (halfWidth + 1.35)) / 1.1);
+  const dBead = Math.hypot(x - 29.5, y - 29.5);
+  const bead = 1 - clamp01((dBead - 6.2) / 1.05);
+  const beadOutline = 1 - clamp01((dBead - 7.5) / 1.1);
+
+  let c = [0, 0, 0, 0];
+  c = over(c, [0.035, 0.030, 0.040, 0.92], Math.max(bodyOutline, beadOutline));
+  const shine = lerp(1, 0.74, t);
+  c = over(c, [0.97 * shine, 0.95 * shine, 0.88 * shine, 1], body);
+  if (bead > 0) {
+    const rim = clamp01((dBead - 4.7) / 1.5);
+    let bc = [lerp(0.80, 0.42, rim), lerp(0.20, 0.07, rim), lerp(0.24, 0.10, rim), 1];
+    const k = rim * rim * 0.75;
+    bc = [lerp(bc[0], 0.84, k), lerp(bc[1], 0.70, k), lerp(bc[2], 0.40, k), 1];
+    c = over(c, bc, bead);
+    const dh = Math.hypot(x - 27.4, y - 27.2);
+    c = over(c, [1, 0.93, 0.86, 1], (1 - clamp01(dh / 1.9)) * 0.75 * bead);
+  }
+  return c;
+});
+
+// ======================================================================
+//  Рисование (порт SilkUi.cs)
+// ======================================================================
+
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+let W = 0, H = 0;
+
+function fill(r, tex, alpha = 1) {
+  ctx.save(); ctx.globalAlpha = alpha;
+  ctx.drawImage(tex, r[0], r[1], r[2], r[3]);
+  ctx.restore();
+}
+function tint(r, tex, color, alpha = 1) {   // имитация GUI.color для белых текстур
+  const buf = document.createElement("canvas");
+  buf.width = Math.max(1, Math.ceil(r[2])); buf.height = Math.max(1, Math.ceil(r[3]));
+  const b = buf.getContext("2d");
+  b.drawImage(tex, 0, 0, buf.width, buf.height);
+  b.globalCompositeOperation = "source-in";
+  b.fillStyle = rgba(color, 1);
+  b.fillRect(0, 0, buf.width, buf.height);
+  ctx.save(); ctx.globalAlpha = alpha; ctx.drawImage(buf, r[0], r[1], r[2], r[3]); ctx.restore();
+}
+function fillColor(r, color, a = 1) { ctx.fillStyle = rgba(color, a); ctx.fillRect(r[0], r[1], r[2], r[3]); }
+function frame(r, color, a, th) {
+  fillColor([r[0], r[1], r[2], th], color, a);
+  fillColor([r[0], r[1] + r[3] - th, r[2], th], color, a);
+  fillColor([r[0], r[1] + th, th, r[3] - th * 2], color, a);
+  fillColor([r[0] + r[2] - th, r[1] + th, th, r[3] - th * 2], color, a);
+}
+function diamond(cx, cy, size, color, a = 1) {
+  tint([cx - size / 2, cy - size / 2, size, size], TEX.diamond, color, a);
+}
+function glow(cx, cy, radius, color, a) {
+  tint([cx - radius, cy - radius, radius * 2, radius * 2], TEX.glow, color, a);
+}
+function setFont(px, weight = "") { ctx.font = `${weight} ${Math.max(8, Math.round(px))}px ${FONT}`.trim(); }
+function text(str, r, size, color, align = "left", a = 1) {
+  if (!str) return;
+  setFont(size);
+  ctx.textBaseline = "middle";
+  ctx.textAlign = align;
+  const x = align === "center" ? r[0] + r[2] / 2 : align === "right" ? r[0] + r[2] : r[0];
+  const y = r[1] + r[3] / 2;
+  ctx.fillStyle = `rgba(0,0,0,${0.62 * a})`;
+  ctx.fillText(str, x + 1.5, y + 1.5);
+  ctx.fillStyle = rgba(color, a);
+  ctx.fillText(str, x, y);
+}
+function measure(str, size) { setFont(size); return ctx.measureText(str).width; }
+function ellipsize(str, size, maxWidth) {
+  if (measure(str, size) <= maxWidth) return str;
+  let s = str;
+  while (s.length > 1 && measure(s + "…", size) > maxWidth) s = s.slice(0, -1);
+  return s + "…";
+}
+function spaced(str) {
+  let out = "";
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (ch === " ") { out += "   "; continue; }
+    out += ch;
+    if (i < str.length - 1 && str[i + 1] !== " ") out += " ";
+  }
+  return out;
+}
+
+function panelBg(r, s) {
+  const halo = 46 * s;
+  tint([r[0] - halo, r[1] - halo, r[2] + halo * 2, r[3] + halo * 2], TEX.glow, [0, 0, 0], 0.55);
+  fill(r, TEX.panel);
+  const pat = ctx.createPattern(TEX.grain, "repeat");
+  ctx.save(); ctx.fillStyle = pat; ctx.fillRect(r[0], r[1], r[2], r[3]); ctx.restore();
+  fill([r[0], r[1], r[2], 90 * s], TEX.silkFill, 0.16);
+
+  const th = 2 * s;
+  frame(r, C.goldDim, 0.95, th);
+  const inner = [r[0] + 5 * s, r[1] + 5 * s, r[2] - 10 * s, r[3] - 10 * s];
+  frame(inner, C.crimson, 0.55, Math.max(1, s));
+
+  const d = 13 * s;
+  diamond(r[0], r[1], d, C.gold, 0.95);
+  diamond(r[0] + r[2], r[1], d, C.gold, 0.95);
+  diamond(r[0], r[1] + r[3], d, C.gold, 0.95);
+  diamond(r[0] + r[2], r[1] + r[3], d, C.gold, 0.95);
+  diamond(r[0] + r[2] / 2, r[1], d * 0.7, C.goldDim, 0.9);
+  diamond(r[0] + r[2] / 2, r[1] + r[3], d * 0.7, C.goldDim, 0.9);
+}
+function well(r, s) { fillColor(r, [0, 0, 0], 0.30); frame(r, C.goldDim, 0.38, Math.max(1, s)); }
+function divider(r, s) {
+  tint(r, TEX.divider, C.goldDim, 0.9);
+  const size = Math.max(5, r[3] * 5), cx = r[0] + r[2] / 2, cy = r[1] + r[3] / 2;
+  diamond(cx, cy, size, C.goldDim, 0.9);
+  diamond(cx - size * 1.6, cy, size * 0.55, C.goldDim, 0.63);
+  diamond(cx + size * 1.6, cy, size * 0.55, C.goldDim, 0.63);
+}
+function focusMarkers(r, s) {
+  const pulse = 0.62 + 0.38 * Math.sin(performance.now() / 1000 * 5.5);
+  const a = 0.55 + 0.45 * pulse, size = 10 * s, off = 9 * s;
+  diamond(r[0] - off, r[1] + r[3] / 2, size, C.gold, Math.min(1, a));
+  diamond(r[0] + r[2] + off, r[1] + r[3] / 2, size, C.gold, Math.min(1, a));
+}
+function menuItem(r, label, selected, hover, focused, s) {
+  if (selected) fill(r, TEX.rowSelected);
+  else if (hover || focused) fill(r, TEX.rowHover);
+  if (focused) focusMarkers(r, s);
+  const color = selected || hover || focused ? C.bone : C.boneSoft;
+  const pad = 16 * s;
+  text(label, [r[0] + pad, r[1], r[2] - pad * 2, r[3]], sizes.item * s, color);
+  if (selected) diamond(r[0] + pad * 0.5, r[1] + r[3] / 2, 8 * s, C.crimson);
+}
+function smallButton(r, label, active, hover, focused, s) {
+  if (active) fillColor(r, C.crimson, 0.38);
+  else fillColor(r, [0, 0, 0], hover || focused ? 0.42 : 0.26);
+  frame(r, active ? C.gold : (hover || focused ? C.gold : C.goldDim),
+        active ? 0.95 : (hover || focused ? 0.72 : 0.45), Math.max(1, s));
+  if (focused) {
+    const pulse = 0.62 + 0.38 * Math.sin(performance.now() / 1000 * 5.5);
+    glow(r[0] + r[2] / 2, r[1] + r[3] / 2, Math.max(r[2], r[3]) * 0.78, C.gold, 0.16 + 0.14 * pulse);
+    frame(r, C.gold, Math.min(1, 0.75 + 0.25 * pulse), Math.max(1, 2 * s));
+    diamond(r[0] + 7 * s, r[1] + r[3] / 2, 7 * s, C.gold);
+  }
+  text(label, r, sizes.centered * s, active || hover || focused ? C.bone : C.boneSoft, "center");
+}
+function ornateButton(r, label, enabled, hover, focused, s) {
+  if (enabled) {
+    fill(r, TEX.silkFill);
+    if (hover || focused) {
+      fill(r, TEX.silkFill, 0.35);
+      glow(r[0] + r[2] / 2, r[1] + r[3] / 2, Math.max(r[2], r[3]) * 0.62, C.crimson, 0.35);
+    }
+  } else fillColor(r, [0.08, 0.07, 0.08], 0.75);
+
+  const borderColor = enabled ? C.gold : C.goldDim;
+  frame(r, borderColor, enabled ? (hover || focused ? 1 : 0.75) : 0.45, Math.max(1, 2 * s));
+  frame([r[0] + 4 * s, r[1] + 4 * s, r[2] - 8 * s, r[3] - 8 * s], [0, 0, 0], 0.35, Math.max(1, s));
+  diamond(r[0], r[1] + r[3] / 2, 9 * s, borderColor);
+  diamond(r[0] + r[2], r[1] + r[3] / 2, 9 * s, borderColor);
+  if (focused) focusMarkers(r, s);
+  text(label, r, sizes.send * s, enabled ? C.bone : C.boneDim, "center");
+}
+function hintChip(x, y, key, caption, s) {
+  const h = Math.round(20 * s);
+  const keyW = Math.max(h, measure(key, sizes.hint * s) + 10 * s);
+  const r = [x, y - h / 2, keyW, h];
+  fillColor(r, [0, 0, 0], 0.45);
+  frame(r, C.goldDim, 0.75, 1);
+  text(key, r, sizes.hint * s, C.gold, "center");
+  const capX = r[0] + r[2] + 6 * s;
+  const capW = measure(caption, sizes.hint * s) + 2;
+  text(caption, [capX, y - h / 2, capW, h], sizes.hint * s, C.boneDim);
+  return capX + capW + 16 * s;
+}
+
+// ======================================================================
+//  Данные-заглушки и состояние (как в игре)
+// ======================================================================
+
+const TXT = {
+  ru: { title: "ОБМЕН БУСИНАМИ", subtitle: "Розарий странников", players: "ИГРОКИ",
+        amount: "СУММА", journal: "ЖУРНАЛ", all: "Всё", close: "Закрыть",
+        available: "Доступно: ", lobby: "В лобби: 4 чел.   ·   в пути: 1",
+        choose: "Выберите игрока и сумму", send: "Передать",
+        quick: "G / LB+Y — быстрая отправка (100)",
+        hintSelect: "Выбор", hintConfirm: "Выбрать", hintClose: "Закрыть",
+        hintAmount: "Сумма", hintJournal: "Журнал" },
+  en: { title: "BEAD SHARING", subtitle: "Rosary of the wanderers", players: "PLAYERS",
+        amount: "AMOUNT", journal: "HISTORY", all: "All", close: "Close",
+        available: "Available: ", lobby: "In lobby: 4   ·   pending: 1",
+        choose: "Choose a player and an amount", send: "Bestow",
+        quick: "G / LB+Y — quick send (100)",
+        hintSelect: "Select", hintConfirm: "Choose", hintClose: "Close",
+        hintAmount: "Amount", hintJournal: "Journal" },
+};
+
+const players = ["Ткачиха Лейс", "Shakra", "Пилигрим Нюу", "Garmond", "Sherma", "Крошка Шири", "Hollow_Knight_77"];
+const journal = [
+  ["Отправлено 500 бусин → Shakra", C.boneSoft],
+  ["Доставлено: Shakra получил 500 бусин", C.success],
+  ["Получено 1000 бусин от Garmond", C.success],
+  ["Перевод 250 → Sherma не доставлен, бусины возвращены", C.warn],
+  ["Отправлено 100 бусин → Пилигрим Нюу", C.boneSoft],
+];
+const presets = [100, 500, 1000, 5000];
+
+const state = {
+  balance: 4820, amount: 500, selected: 1, playerOffset: 0,
+  focusId: "send", pointerMode: true, mouse: { x: -999, y: -999 },
+  cursorMode: "Soft", uiScale: 1, lang: "ru", lastPointerAt: 0, lastPadAt: -999,
+};
+let focusables = [];
+let clickTargets = [];
+
+function tr() { return TXT[state.lang]; }
+
+// ======================================================================
+//  Сцена игры за меню (чтобы было видно затемнение и виньетку)
+// ======================================================================
+
+function drawGameBehind() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#0b1a12"); g.addColorStop(0.55, "#12301f"); g.addColorStop(1, "#060c08");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  ctx.save();
+  for (let i = 0; i < 26; i++) {
+    const x = (i * 97 % W), y = (i * 173 % H), r = 40 + (i * 37 % 120);
+    ctx.globalAlpha = 0.05 + (i % 5) * 0.012;
+    ctx.fillStyle = i % 3 ? "#1f5b33" : "#0a3a22";
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.62, i, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = 0.5;
+  ctx.fillStyle = "#040806";
+  ctx.fillRect(0, H * 0.82, W, H * 0.18);
+  ctx.restore();
+
+  // силуэт Хорнет
+  const hx = W * 0.5, hy = H * 0.80, k = Math.min(W, H) / 900;
+  ctx.save(); ctx.translate(hx, hy); ctx.scale(k, k);
+  ctx.fillStyle = "#07100b";
+  ctx.beginPath(); ctx.moveTo(-26, 0); ctx.lineTo(26, 0); ctx.lineTo(0, -74); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#8e1d2c";
+  ctx.beginPath(); ctx.moveTo(-24, 2); ctx.lineTo(24, 2); ctx.lineTo(0, -52); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = "#0d140f";
+  ctx.beginPath(); ctx.ellipse(0, -84, 13, 16, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-6, -96); ctx.lineTo(-16, -126); ctx.lineTo(-2, -100); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(6, -96); ctx.lineTo(16, -126); ctx.lineTo(2, -100); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// ======================================================================
+//  Главная отрисовка — порт TransferWindow.OnGUI
+// ======================================================================
+
+function computeScale() {
+  let s = Math.min(W / 1600, H / 900);
+  s = Math.min(2.2, Math.max(0.62, s)) * state.uiScale;
+  return Math.max(0.4, Math.min(s, Math.min((W - 32) / L.panelW, (H - 32) / L.panelH)));
+}
+
+function control(id, r) {
+  focusables.push({ id, r });
+  const hover = state.pointerMode && hit(r, state.mouse);
+  const focused = !state.pointerMode && state.focusId === id;
+  clickTargets.push({ id, r });
+  return { hover, focused };
+}
+const hit = (r, p) => p.x >= r[0] && p.x <= r[0] + r[2] && p.y >= r[1] && p.y <= r[1] + r[3];
+
+function draw() {
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const rect = cv.getBoundingClientRect();
+  if (cv.width !== Math.round(rect.width * dpr) || cv.height !== Math.round(rect.height * dpr)) {
+    cv.width = Math.round(rect.width * dpr); cv.height = Math.round(rect.height * dpr);
+  }
+  W = rect.width; H = rect.height;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  drawGameBehind();
+
+  const s = computeScale();
+  const t = tr();
+  focusables = []; clickTargets = [];
+
+  // затемнение и виньетка (DrawBackdrop)
+  fillColor([0, 0, 0, 0], [0, 0, 0], 0);
+  ctx.fillStyle = "rgba(3,3,4,0.64)"; ctx.fillRect(0, 0, W, H);
+  fill([0, 0, 0 + W, H], TEX.vignette, 0.9);
+
+  const p = [Math.round((W - L.panelW * s) / 2), Math.round((H - L.panelH * s) / 2),
+             Math.round(L.panelW * s), Math.round(L.panelH * s)];
+  panelBg(p, s);
+
+  const x0 = p[0] + L.pad * s;
+  const width = p[2] - L.pad * s * 2;
+
+  // ---------- шапка ----------
+  text(spaced(t.title), [x0, p[1] + 20 * s, width, 34 * s], sizes.title * s, C.bone, "center");
+  text(t.subtitle, [x0, p[1] + 56 * s, width, 18 * s], sizes.status * s, C.boneDim, "center");
+
+  const balance = String(state.balance);
+  const balanceRect = [p[0] + p[2] - (L.pad + 200) * s, p[1] + 22 * s, 200 * s, 26 * s];
+  text(balance, balanceRect, sizes.balance * s, C.gold, "right");
+  const bx = balanceRect[0] + balanceRect[2] - measure(balance, sizes.balance * s) - 14 * s;
+  const by = balanceRect[1] + balanceRect[3] / 2;
+  diamond(bx, by, 15 * s, C.gold, 0.9);
+  diamond(bx, by, 9 * s, C.crimson);
+
+  divider([x0, p[1] + 84 * s, width, Math.max(1, s)], s);
+  text(t.lobby, [x0, p[1] + 92 * s, width, 22 * s], sizes.status * s, C.boneDim, "center");
+
+  // ---------- список игроков ----------
+  text(t.players, [x0, p[1] + 118 * s, L.listW * s, 20 * s], sizes.section * s, C.gold);
+  if (players.length > L.visiblePlayers)
+    text(`${state.playerOffset + 1}–${Math.min(players.length, state.playerOffset + L.visiblePlayers)} / ${players.length}`,
+         [x0, p[1] + 118 * s, L.listW * s, 20 * s], sizes.section * s, C.boneDim, "right");
+  const listRect = [x0, p[1] + 142 * s, L.listW * s, L.rowH * L.visiblePlayers * s];
+  well(listRect, s);
+
+  const last = Math.min(players.length, state.playerOffset + L.visiblePlayers);
+  for (let i = state.playerOffset; i < last; i++) {
+    const r = [listRect[0] + 2 * s, listRect[1] + 2 * s + (i - state.playerOffset) * L.rowH * s,
+               listRect[2] - 4 * s, L.rowH * s - 2 * s];
+    const st = control("player:" + i, r);
+    menuItem(r, ellipsize(players[i], sizes.item * s, r[2] - 40 * s), state.selected === i, st.hover, st.focused, s);
+  }
+  if (state.playerOffset > 0)
+    text("▲", [listRect[0] + listRect[2] - 22 * s, listRect[1] + 2 * s, 18 * s, 16 * s], sizes.hint * s, C.gold);
+  if (last < players.length)
+    text("▼", [listRect[0] + listRect[2] - 22 * s, listRect[1] + listRect[3] - 18 * s, 18 * s, 16 * s], sizes.hint * s, C.gold);
+
+  // ---------- сумма ----------
+  const rightX = p[0] + (L.pad + L.listW + L.colGap) * s;
+  const rightW = p[2] - (L.pad + L.listW + L.colGap) * s - L.pad * s;
+  text(t.amount, [rightX, p[1] + 118 * s, rightW, 20 * s], sizes.section * s, C.gold);
+
+  const gap = 8 * s, count = presets.length + 1;
+  const bw = (rightW - gap * (count - 1)) / count;
+  presets.forEach((value, i) => {
+    const r = [rightX + i * (bw + gap), p[1] + 142 * s, bw, 34 * s];
+    const st = control("preset:" + i, r);
+    smallButton(r, String(value), state.amount === value, st.hover, st.focused, s);
+  });
+  const allRect = [rightX + presets.length * (bw + gap), p[1] + 142 * s, bw, 34 * s];
+  const allSt = control("preset:all", allRect);
+  smallButton(allRect, t.all, state.amount === state.balance, allSt.hover, allSt.focused, s);
+
+  const stepY = p[1] + 186 * s, stepH = 34 * s, stepW = 40 * s, fieldW = 120 * s;
+  const minusRect = [rightX, stepY, stepW, stepH];
+  const mSt = control("minus", minusRect);
+  smallButton(minusRect, "−", false, mSt.hover, mSt.focused, s);
+
+  const fieldRect = [minusRect[0] + minusRect[2] + 6 * s, stepY, fieldW, stepH];
+  const fSt = control("field", fieldRect);
+  fill(fieldRect, TEX.fieldFill);
+  frame(fieldRect, C.gold, fSt.hover || fSt.focused ? 0.9 : 0.5, Math.max(1, s));
+  if (fSt.focused) focusMarkers(fieldRect, s);
+  text(String(state.amount), fieldRect, 17 * s, C.bone, "center");
+
+  const plusRect = [fieldRect[0] + fieldRect[2] + 6 * s, stepY, stepW, stepH];
+  const pSt = control("plus", plusRect);
+  smallButton(plusRect, "+", false, pSt.hover, pSt.focused, s);
+
+  text(t.available + state.balance,
+       [plusRect[0] + plusRect[2] + 14 * s, stepY, rightW, stepH], sizes.hint * s, C.boneDim);
+
+  // ---------- кнопка передачи ----------
+  const sendRect = [rightX, p[1] + 232 * s, rightW, 54 * s];
+  const sendSt = control("send", sendRect);
+  const target = players[state.selected];
+  const label = target && state.amount > 0
+    ? `${t.send} ${state.amount} → ${ellipsize(target, sizes.send * s, rightW * 0.45)}`
+    : t.choose;
+  ornateButton(sendRect, label, !!target && state.amount > 0, sendSt.hover, sendSt.focused, s);
+  text(t.quick, [rightX, p[1] + 292 * s, rightW, 18 * s], sizes.hint * s, C.boneDim);
+
+  // ---------- журнал ----------
+  divider([x0, p[1] + 348 * s, width, Math.max(1, s)], s);
+  text(t.journal, [x0, p[1] + 362 * s, width, 20 * s], sizes.section * s, C.gold);
+  const logRect = [x0, p[1] + 386 * s, width, 126 * s];
+  well(logRect, s);
+  const lines = Math.max(1, Math.floor(logRect[3] / (L.logLineH * s)));
+  journal.slice(-lines).forEach((entry, i) => {
+    const r = [logRect[0] + 10 * s, logRect[1] + 2 * s + i * L.logLineH * s, logRect[2] - 20 * s, L.logLineH * s];
+    text(ellipsize(entry[0], sizes.log * s, r[2]), r, sizes.log * s, entry[1]);
+  });
+
+  // ---------- низ ----------
+  const footY = p[1] + 538 * s;
+  const closeRect = [p[0] + p[2] - (L.pad + 150) * s, footY - 16 * s, 150 * s, 32 * s];
+  const cSt = control("close", closeRect);
+  smallButton(closeRect, t.close, false, cSt.hover, cSt.focused, s);
+
+  let hx = x0;
+  if (padConnected) {
+    hx = hintChip(hx, footY, "A", t.hintConfirm, s);
+    hx = hintChip(hx, footY, "B", t.hintClose, s);
+    hx = hintChip(hx, footY, "LB/RB", t.hintAmount, s);
+    if (hx < closeRect[0] - 90 * s) hintChip(hx, footY, "LT/RT", t.hintJournal, s);
+  } else {
+    hx = hintChip(hx, footY, "↑↓←→", t.hintSelect, s);
+    hx = hintChip(hx, footY, "Enter", t.hintConfirm, s);
+    hx = hintChip(hx, footY, "F7", t.hintClose, s);
+    if (hx < closeRect[0] - 120 * s) hintChip(hx, footY, "LB+RB", "открыть", s);
+  }
+
+  // ---------- курсор ----------
+  drawCursor(s);
+}
+
+function drawCursor(s) {
+  if (state.cursorMode === "System") return;
+  const fade = state.pointerMode ? 1 :
+    clamp01(1 - ((performance.now() - state.lastPointerAt) / 1000 - 1.2) / 0.6);
+  if (fade <= 0.02 || state.mouse.x < -100) return;
+
+  const scale = Math.max(0.5, s);
+  const pulse = 0.78 + 0.22 * Math.sin(performance.now() / 1000 * 3.2);
+  glow(state.mouse.x, state.mouse.y, 20 * scale, C.crimson, 0.30 * fade * pulse);
+  fill([state.mouse.x - HOTSPOT * scale, state.mouse.y - HOTSPOT * scale,
+        CURSOR_SIZE * scale, CURSOR_SIZE * scale], TEX.cursor, fade);
+}
+
+// ======================================================================
+//  Ввод: мышь, клавиатура, геймпад (та же логика, что в моде)
+// ======================================================================
+
+cv.addEventListener("mousemove", e => {
+  const r = cv.getBoundingClientRect();
+  state.mouse = { x: e.clientX - r.left, y: e.clientY - r.top };
+  state.pointerMode = true;
+  state.lastPointerAt = performance.now();
+});
+cv.addEventListener("mousedown", () => {
+  state.pointerMode = true;
+  const target = [...clickTargets].reverse().find(c => hit(c.r, state.mouse));
+  if (target) activate(target.id);
+});
+
+window.addEventListener("keydown", e => {
+  const map = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  if (map[e.key]) { state.pointerMode = false; moveFocus(...map[e.key]); e.preventDefault(); }
+  else if (e.key === "Enter") { state.pointerMode = false; activate(state.focusId); }
+  else if (e.key === "Escape") flash("Меню закрыто (Esc / B)");
+});
+
+function activate(id) {
+  state.focusId = id;
+  if (id.startsWith("player:")) { state.selected = +id.slice(7); }
+  else if (id.startsWith("preset:")) {
+    state.amount = id === "preset:all" ? state.balance : presets[+id.slice(7)];
+  } else if (id === "minus") step(-1);
+  else if (id === "plus") step(1);
+  else if (id === "send") doSend();
+  else if (id === "close") flash("Меню закрыто (F7 / B)");
+}
+function step(dir) {
+  const st = state.amount < 200 ? 10 : state.amount < 2000 ? 50 : state.amount < 20000 ? 250 : 1000;
+  state.amount = Math.max(0, Math.min(state.balance, state.amount + st * dir));
+}
+function cyclePreset(dir) {
+  let i = presets.indexOf(state.amount);
+  if (i < 0) i = dir > 0 ? -1 : presets.length;
+  i = (i + dir + presets.length) % presets.length;
+  state.amount = presets[i];
+}
+function doSend() {
+  const target = players[state.selected];
+  if (!target || state.amount <= 0) return;
+  journal.push([`Отправлено ${state.amount} бусин → ${target}`, C.boneSoft]);
+  setTimeout(() => journal.push([`Доставлено: ${target} получил ${state.amount} бусин`, C.success]), 700);
+  state.balance = Math.max(0, state.balance - state.amount);
+}
+function flash(msg) {
+  journal.push([msg, C.warn]);
+}
+
+function moveFocus(dx, dy) {
+  if (dy !== 0 && state.focusId.startsWith("player:")) {
+    const index = +state.focusId.slice(7), next = index + dy;
+    if (next >= 0 && next < players.length) { selectPlayer(next); return; }
+    if (dy < 0) return;
+  }
+  const current = focusables.find(f => f.id === state.focusId);
+  if (!current) { state.focusId = focusables[0].id; return; }
+  const from = [current.r[0] + current.r[2] / 2, current.r[1] + current.r[3] / 2];
+
+  let best = null, bestScore = Infinity;
+  for (const f of focusables) {
+    if (f.id === state.focusId) continue;
+    const to = [f.r[0] + f.r[2] / 2, f.r[1] + f.r[3] / 2];
+    const along = dx !== 0 ? (to[0] - from[0]) * dx : (to[1] - from[1]) * dy;
+    const across = dx !== 0 ? Math.abs(to[1] - from[1]) : Math.abs(to[0] - from[0]);
+    if (along <= 2) continue;
+    const score = along + across * 2.2;
+    if (score < bestScore) { bestScore = score; best = f.id; }
+  }
+  if (best) {
+    state.focusId = best;
+    if (best.startsWith("player:")) selectPlayer(+best.slice(7));
+  }
+}
+function selectPlayer(index) {
+  state.selected = index;
+  state.focusId = "player:" + index;
+  if (index < state.playerOffset) state.playerOffset = index;
+  else if (index >= state.playerOffset + L.visiblePlayers) state.playerOffset = index - L.visiblePlayers + 1;
+}
+
+// --- геймпад через Gamepad API (аналог InControl в моде) ---
+let padConnected = false;
+const padPrev = {};
+let navNextAt = 0, navDir = [0, 0];
+
+function pollGamepad() {
+  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+  let pad = null;
+  for (const p of pads) if (p && p.connected) { pad = p; break; }
+
+  const badge = document.getElementById("pad");
+  padConnected = !!pad;
+  badge.textContent = pad ? "геймпад: " + pad.id.slice(0, 28) : "геймпад: не найден";
+  badge.className = pad ? "" : "off";
+  if (!pad) return;
+
+  const b = i => pad.buttons[i] && pad.buttons[i].pressed;
+  const pressed = i => { const now = b(i), was = padPrev[i]; padPrev[i] = now; return now && !was; };
+
+  let x = pad.axes[0] || 0, y = pad.axes[1] || 0;
+  if (b(14)) x -= 1; if (b(15)) x += 1;
+  if (b(12)) y -= 1; if (b(13)) y += 1;
+
+  const dead = 0.45;
+  const dirX = x > dead ? 1 : x < -dead ? -1 : 0;
+  const dirY = y > dead ? 1 : y < -dead ? -1 : 0;
+  const now = performance.now();
+  if (dirX || dirY) {
+    state.pointerMode = false; state.lastPadAt = now;
+    if (dirX !== navDir[0] || dirY !== navDir[1]) { navDir = [dirX, dirY]; navNextAt = now + 350; moveFocus(dirX, dirY); }
+    else if (now >= navNextAt) { navNextAt = now + 110; moveFocus(dirX, dirY); }
+  } else navDir = [0, 0];
+
+  if (pressed(0)) { state.pointerMode = false; activate(state.focusId); }     // A
+  if (pressed(1)) { state.pointerMode = false; flash("Меню закрыто (B)"); }   // B
+  if (pressed(2)) { state.pointerMode = false; state.amount = state.balance; }// X
+  if (pressed(4)) { state.pointerMode = false; cyclePreset(-1); }             // LB
+  if (pressed(5)) { state.pointerMode = false; cyclePreset(1); }              // RB
+}
+window.addEventListener("gamepadconnected", () => { padConnected = true; });
+
+// ======================================================================
+//  Панель настроек предпросмотра
+// ======================================================================
+
+document.getElementById("btnCursor").onclick = e => {
+  state.cursorMode = state.cursorMode === "Soft" ? "Both" : state.cursorMode === "Both" ? "System" : "Soft";
+  e.target.textContent = "Курсор: " + state.cursorMode;
+  cv.classList.toggle("system-cursor", state.cursorMode !== "Soft");
+};
+document.getElementById("btnScale").onclick = e => {
+  const steps = [0.85, 1.0, 1.15, 1.3];
+  state.uiScale = steps[(steps.indexOf(state.uiScale) + 1) % steps.length];
+  e.target.textContent = "Масштаб: " + state.uiScale.toFixed(2);
+};
+document.getElementById("btnLang").onclick = e => {
+  state.lang = state.lang === "ru" ? "en" : "ru";
+  e.target.textContent = "Язык: " + state.lang.toUpperCase();
+};
+
+(function loop() {
+  pollGamepad();
+  while (journal.length > 12) journal.shift();
+  draw();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

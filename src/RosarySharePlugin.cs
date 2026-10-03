@@ -40,7 +40,9 @@ namespace RosaryShare
             gameObject.AddComponent<TransferManager>();
             gameObject.AddComponent<TransferWindow>();
 
-            LogInfo(string.Format("{0} {1} loaded. Menu key: {2}.", PluginName, PluginVersion, ModConfig.MenuKeyCode));
+            LogInfo(string.Format("{0} {1} loaded. Menu key: {2}. Gamepad combo: {3}.",
+                PluginName, PluginVersion, ModConfig.MenuKeyCode,
+                ModConfig.MenuCombo != null ? ModConfig.MenuCombo.Text : "none"));
 
             if (XvXBridge.IsMultiplayerPresent())
                 LogInfo("Multiplayer mod (SilksongMultiplayer) detected.");
