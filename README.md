@@ -14,6 +14,14 @@ session, but speaks its own protocol over the free **Steam P2P channel 1**
 
 - 🎁 Send beads, shell shards, or discovered inventory items to anyone in your lobby — **F7** (or **LB+RB** on a gamepad) opens a standalone sharing window
   over the game; it does not replace or embed into the native inventory.
+- 🛟 **Only safe items are tradeable.** The "Items" tab is built from an explicit allow-list
+  of plain collectibles — keys, relics (Bone Scrolls, Weaver Effigies, Rune Harps, Choral
+  Commandments, Psalm Cylinders, Arcane Eggs), fleas, keepsakes (Mementos, Memory Lockets)
+  and crafting materials (Craftmetal, Pale Oil, Mossberries). Abilities/skills, crests and
+  tool loadouts, mask/spool (max health/silk) upgrades, quest or story flags, and map/journal
+  state are never listed — giving or taking those away could desync your moveset, skip a
+  tutorial, or leave your save in an inconsistent state, so RosaryShare refuses to touch them
+  at all. See [Safe items only](#safe-items-only) below.
 - 🕯 **Silksong-styled menu**: dimmed background, carved panel with gold filigree,
   crimson silk highlights, serif caps — it belongs in Hallownest, not in a debug overlay.
 - 🖱 **Its own mouse cursor** — the game hides the system one, so the menu draws a
@@ -35,7 +43,7 @@ session, but speaks its own protocol over the free **Steam P2P channel 1**
 2. BepInEx 5 (x64).
 3. **Silksong Multiplayer Mod (XvX)** — the one with Create Lobby / Invite Players
    buttons (tested against 0.11.4 and 0.12.x).
-4. Every player exchanging items needs RosaryShare 1.3.0 or newer installed.
+4. Every player exchanging items needs RosaryShare 1.4.0 or newer installed.
 
 ## Installation
 
@@ -104,6 +112,28 @@ error), the amount is refunded automatically — with a notification.
 | `[Transfers] Max Receive Amount` | `1000000` | Per-transfer incoming limit. |
 | `[Transfers] Send Cooldown Seconds` | `1.5` | Delay between sends. |
 | `[Transfers] Ack Timeout Seconds` | `6` | Delivery wait before auto-refund. |
+
+## Safe items only
+
+RosaryShare never guesses which arbitrary save fields look "item-like". The Items tab is
+built from the game's own `PlayerData` save fields at runtime (so new patches don't need a
+mod update), but every field has to pass a strict allow-list before it ever shows up:
+
+1. A field is rejected outright if any part of its name matches a DANGER word — movement or
+   combat abilities (dash, wall jump, double jump, needle throw, parry, silk charge, …),
+   crest/tool equip-loadout slots, mask/spool (max health/max silk) upgrades, quest/story
+   flags, map or Hunter's Journal state, or any engine/save bookkeeping. This check always
+   wins, even if the same field also looks like a collectible.
+2. Only once a field has cleared that check is it checked against a SAFE word list covering
+   plain, stackable collectibles: Keys, Relics (Bone Scroll, Weaver Effigy, Rune Harp, Choral
+   Commandment, Psalm Cylinder, Arcane Egg), Fleas, Keepsakes (Memento, Memory Locket) and
+   Materials (Craftmetal, Pale Oil, Mossberry).
+
+Anything that doesn't clearly land in the safe list is simply left out of the menu — missing
+a possible item is the acceptable failure mode here, not transferring something that could
+desync Hornet's moveset, skip a scripted unlock, or leave your max health/silk, quest state,
+or completion stats inconsistent. Beads (geo) and shell shards go through the game's own
+`CurrencyManager`/`HeroController` APIs exactly as before and are unaffected by this filter.
 
 ## How it works
 
