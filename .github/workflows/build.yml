@@ -22,6 +22,19 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Fetch BepInEx 5 reference assembly
+        shell: pwsh
+        run: |
+          # BepInEx 5.x отсутствует на NuGet — берём официальный релизный zip
+          # из GitHub и достаём из него BepInEx/core/BepInEx.dll в lib/BepInEx/.
+          $zip = "$env:TEMP/bepinex.zip"
+          Invoke-WebRequest -Uri "https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.4/BepInEx_win_x64_5.4.23.4.zip" -OutFile $zip
+          $dest = "$env:TEMP/bepinex"
+          Expand-Archive -Path $zip -DestinationPath $dest -Force
+          New-Item -ItemType Directory -Force -Path "lib/BepInEx" | Out-Null
+          Copy-Item "$dest/BepInEx/core/BepInEx.dll" "lib/BepInEx/BepInEx.dll"
+          Write-Host "BepInEx reference ready: " (Get-Item lib/BepInEx/BepInEx.dll).Length "bytes"
+
       - name: Restore
         shell: pwsh
         run: |

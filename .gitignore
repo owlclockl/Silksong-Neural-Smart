@@ -4,6 +4,9 @@ obj/
 dist/
 build.log
 
+# Референсные сборки, скачиваемые при сборке (BepInEx 5 и т.п.)
+lib/
+
 # Локальный путь к игре (используется build.bat / build.sh)
 silksong.path.txt
 

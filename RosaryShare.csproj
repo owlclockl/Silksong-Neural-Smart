@@ -84,14 +84,33 @@
     </Reference>
   </ItemGroup>
 
-  <!-- ============ Без игры: NuGet (BepInEx/Unity) + справочные стабы ============ -->
+  <!-- ============ Без игры: NuGet (Unity) + файловый BepInEx + стабы ============ -->
+  <!--
+    BepInEx 5.x нет ни на nuget.org, ни на nuget.bepinex.dev (там только 6.x-be),
+    поэтому в режиме без игры BepInEx.dll кладётся в lib/BepInEx/ —
+    локально вручную, а в CI — автоматической распаковкой официального zip
+    BepInEx_win_x64_5.4.23.4.zip из релизов GitHub (см. .github/workflows/build.yml).
+  -->
+  <PropertyGroup Label="BepInExBootstrap" Condition="'$(UseGameReferences)' != 'true'">
+    <BepInExBootstrapDir Condition="'$(BepInExBootstrapDir)' == ''">$(MSBuildThisFileDirectory)lib/BepInEx</BepInExBootstrapDir>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(UseGameReferences)' != 'true'">
-    <PackageReference Include="BepInEx.Core" Version="5.4.23.4" PrivateAssets="all" />
     <PackageReference Include="UnityEngine.Modules" Version="6000.0.50" IncludeAssets="compile" PrivateAssets="all" />
+
+    <Reference Include="BepInEx" Condition="Exists('$(BepInExBootstrapDir)/BepInEx.dll')">
+      <HintPath>$(BepInExBootstrapDir)/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
 
     <ProjectReference Include="refs/GameStubs/GameStubs.csproj" Private="false" />
     <ProjectReference Include="refs/SteamworksStubs/SteamworksStubs.csproj" Private="false" />
   </ItemGroup>
+
+  <Target Name="RequireBepInExBootstrap" BeforeTargets="BeforeBuild"
+          Condition="'$(UseGameReferences)' != 'true' AND !Exists('$(BepInExBootstrapDir)/BepInEx.dll')">
+    <Error Text="[RosaryShare] Нет ни игры, ни lib/BepInEx/BepInEx.dll. Скачайте https://github.com/BepInEx/BepInEx/releases/tag/v5.4.23.4 и распакуйте файл BepInEx/core/BepInEx.dll из архива BepInEx_win_x64_5.4.23.4.zip в папку lib/BepInEx/, либо укажите путь к игре: -p:SilksongPath=..." />
+  </Target>
 
   <ItemGroup Condition="'$(TargetFramework.TrimEnd(`0123456789`))' == 'net'">
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
