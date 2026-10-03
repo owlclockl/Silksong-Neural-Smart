@@ -13,6 +13,8 @@
     <DebugType>portable</DebugType>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <NoWarn>$(NoWarn);CS0649;CS0414;MSB3277;NETSDK1138</NoWarn>
+    <!-- Исходники стабов компилируются только в своих проектах refs/*/ -->
+    <Compile Remove="refs/**/*.cs" />
   </PropertyGroup>
 
   <!--

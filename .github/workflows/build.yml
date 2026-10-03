@@ -49,6 +49,7 @@ jobs:
 
       - name: Report failure as commit comment
         if: failure()
+        continue-on-error: true
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,8 +59,9 @@ jobs:
             if (Test-Path $f) { $tail += "### $f`n" + ((Get-Content $f -Tail 300) -join "`n") + "`n`n" }
           }
           if ($tail.Length -gt 60000) { $tail = $tail.Substring($tail.Length - 60000) }
-          $body = "❌ CI build failed for " + '${{ github.sha }}'.Substring(0,7) + "`n`n```````n" + $tail + "`n``````"
-          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F "body=$body" | Out-Null
+          $body = "CI build failed for ${{ github.sha }}`n`n``````" + "`n" + $tail + "`n``````"
+          [System.IO.File]::WriteAllText("ci-report.md", $body)
+          gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" -F body=@ci-report.md
 
       - name: Package
         if: success()
