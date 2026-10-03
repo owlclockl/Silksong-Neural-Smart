@@ -8,9 +8,20 @@ namespace RosaryShare
 {
     /// <summary>
     /// Runtime inventory adapter. It intentionally resolves PlayerData from the live game
-    /// instead of compiling against a particular Silksong patch. Transferable entries are
-    /// discovered from public integer and boolean save fields; volatile combat/currency
-    /// fields are excluded. This also lets newer game items appear without a mod update.
+    /// instead of compiling against a particular Silksong patch. This also lets newer game
+    /// items appear without a mod update.
+    ///
+    /// Safety model: transferable entries are only ever picked from an explicit SAFE
+    /// allow-list of plain, stackable collectibles (keys, relics, fleas, keepsakes,
+    /// crafting materials — the kind of thing you would hand a friend in the base game).
+    /// Anything that looks even remotely like a movement/combat ability, a crest or tool
+    /// loadout slot, a max-health/max-silk upgrade, a quest/story flag, a map or journal
+    /// reveal, or any other engine/save-file bookkeeping field is rejected outright by a
+    /// DANGER word list that always wins, even if a field also happens to contain a safe
+    /// word. The goal is that a transfer can never desync HeroController's cached ability
+    /// state, never let someone skip a scripted unlock, and never leave max health/silk or
+    /// quest progress inconsistent — i.e. nothing a player can send or receive here should
+    /// ever be able to corrupt a save or soft-lock a game.
     ///
     /// Item icons are resolved from the game's loaded Sprite assets first. A procedural
     /// icon remains only as a safe fallback for a field whose asset has not been loaded
@@ -48,12 +59,79 @@ namespace RosaryShare
         private static bool _resourcesScanned;
         private static float _nextSpriteRefresh;
 
+        // Exact field names that must never be touched, regardless of the word-based
+        // filters below. Kept as a first line of defence for the handful of fields we
+        // know by name (currency/health/save bookkeeping already handled elsewhere).
         private static readonly HashSet<string> Excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             "geo", "ShellShards", "health", "maxHealth", "silk", "silkMax", "isInventoryOpen",
             "respawnMarkerName", "respawnScene", "hazardRespawnLocation", "MPCharge", "MPReserve",
-            "profileID", "playTime", "permadeathMode", "atBench", "disablePause"
+            "profileID", "playTime", "permadeathMode", "atBench", "disablePause",
+            "CurrentCrestID", "IsSilkSpoolBroken", "mapAllRooms", "infiniteAirJump",
+            "UnlockedExtraBlueSlot", "UnlockedExtraYellowSlot",
         };
+
+        // Word-level block list. A save field is rejected the moment ANY of its camelCase
+        // words matches one of these — even if the same field also contains a safe word —
+        // because none of these categories behave like a simple, giveable item:
+        //  * movement/combat abilities: taking one away mid-run (or mid-air) desyncs
+        //    HeroController's cached move-set, and granting one early can let a player
+        //    skip the cutscene/tutorial that is supposed to teach it;
+        //  * crest/tool equip-loadout bookkeeping: tied to per-slot UI state, not a count;
+        //  * max health / max silk upgrades: PlayerData keeps a separate derived cap that
+        //    is only recalculated by the game's own pickup code, so poking the raw counter
+        //    desyncs the HUD and the actual cap;
+        //  * quest/story/world-state flags, map reveals, hunter's-journal and completion
+        //    stats: these drive NPC/FSM logic and progression tracking, not inventory.
+        private static readonly HashSet<string> DangerWords = new HashSet<string>(StringComparer.Ordinal)
+        {
+            // Movement & combat abilities / skills.
+            "dash", "walljump", "jump", "brolly", "harpoon", "needolin", "needle", "throw",
+            "thread", "sphere", "parry", "charge", "bomb", "slash", "bind", "focus", "crawl",
+            "sprint", "climb", "swim", "glide", "pogo", "infinite", "cling", "wallcling",
+            "soar", "clawline", "silksoar",
+            // Crests / tool loadout & equip slots.
+            "crest", "equip", "slot", "loadout", "toolequip",
+            // Health / silk capacity upgrades (feed a derived cap, not a plain counter).
+            "mask", "spool", "silk", "heart", "nail", "maxhealth", "maxsilk", "damage", "regen",
+            // Quest / story / world-state / map / journal / stats / debug.
+            "quest", "wish", "map", "journal", "hunter", "kill", "defeat", "encounter",
+            "discover", "discovered", "visit", "visited", "seen", "met", "complete",
+            "completed", "finish", "finished", "percent", "percentage", "stat", "stats",
+            "record", "active", "state", "flag", "trigger", "cutscene", "boss", "unlocked",
+            "collector", "reward", "given", "stage", "step", "progress", "phase", "broken",
+            "rooms", "all", "achievement",
+            // Save / system bookkeeping (defence in depth alongside Excluded above).
+            "save", "bench", "respawn", "profile", "permadeath", "playtime", "debug", "cheat",
+            "test", "inventoryopen", "geo", "shellshards", "id",
+        };
+
+        // Word -> localized category. A field is accepted only once it has survived the
+        // DANGER check AND one of its words matches here — i.e. this is a strict allow-list,
+        // not a generic "looks item-ish" heuristic. Everything else is left untouched.
+        // Rebuilt alongside the catalogue (not cached forever) so a language change picked
+        // up by Texts.Reload() is reflected the next time the catalogue is rebuilt.
+        private static Dictionary<string, string> BuildSafeWordCategory()
+        {
+            Dictionary<string, string> map = new Dictionary<string, string>(StringComparer.Ordinal);
+            string keys = Texts.T("Ключи", "Keys");
+            string relics = Texts.T("Реликвии", "Relics");
+            string fleas = Texts.T("Блохи", "Fleas");
+            string keepsakes = Texts.T("Памятные вещи", "Keepsakes");
+            string materials = Texts.T("Материалы", "Materials");
+            string items = Texts.T("Предметы", "Items");
+
+            foreach (string w in new[] { "key", "keys", "simplekey", "misckey" }) map[w] = keys;
+            foreach (string w in new[] { "relic", "relics", "scroll", "scrolls", "harp", "harps",
+                "effigy", "effigies", "choral", "psalm", "psalms", "cylinder", "cylinders",
+                "commandment", "commandments", "egg", "eggs" }) map[w] = relics;
+            foreach (string w in new[] { "flea", "fleas" }) map[w] = fleas;
+            foreach (string w in new[] { "memento", "mementos", "locket", "lockets" }) map[w] = keepsakes;
+            foreach (string w in new[] { "craftmetal", "metal", "metals", "oil", "mossberry",
+                "mossberries" }) map[w] = materials;
+            foreach (string w in new[] { "trinket", "trinkets" }) map[w] = items;
+            return map;
+        }
 
         public static IReadOnlyList<ItemEntry> Items
         {
@@ -78,16 +156,18 @@ namespace RosaryShare
             ItemsInternal.Clear();
             ByKey.Clear();
 
+            Dictionary<string, string> safeWordCategory = BuildSafeWordCategory();
             FieldInfo[] fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
             Array.Sort(fields, delegate(FieldInfo a, FieldInfo b) { return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase); });
             foreach (FieldInfo field in fields)
             {
                 if (Excluded.Contains(field.Name)) continue;
                 if (field.FieldType != typeof(bool) && field.FieldType != typeof(int)) continue;
-                if (!LooksLikeInventory(field.Name)) continue;
+
+                string category;
+                if (!IsSafeField(field.Name, safeWordCategory, out category)) continue;
 
                 string key = "pd:" + field.Name;
-                string category = CategoryFor(field.Name);
                 ItemEntry entry = new ItemEntry
                 {
                     Key = key,
@@ -385,22 +465,76 @@ namespace RosaryShare
             return result;
         }
 
-        private static bool LooksLikeInventory(string name)
+        /// <summary>
+        /// Strict allow-list check: <paramref name="name"/> is only accepted when none of
+        /// its camelCase/underscore words is in <see cref="DangerWords"/> AND at least one
+        /// word is a recognised safe collectible, in which case its category is returned.
+        /// Anything ambiguous or unrecognised is rejected — under-including is the safe
+        /// failure mode here, over-including is not.
+        /// </summary>
+        private static bool IsSafeField(string name, Dictionary<string, string> safeWordCategory, out string category)
         {
-            string n = name.ToLowerInvariant();
-            string[] tokens = { "has", "owned", "item", "key", "map", "tool", "crest", "ability", "skill", "quest", "relic", "memento", "collect", "fragment", "piece", "locket", "metal", "oil", "journal", "flea", "mask", "spool", "pouch", "kit", "upgrade" };
-            for (int i = 0; i < tokens.Length; i++) if (n.Contains(tokens[i])) return true;
+            category = null;
+            List<string> words = Tokenize(name);
+            if (words.Count == 0) return false;
+
+            for (int i = 0; i < words.Count; i++)
+                if (DangerWords.Contains(words[i])) return false;
+
+            for (int i = 0; i < words.Count; i++)
+            {
+                string found;
+                if (safeWordCategory.TryGetValue(words[i], out found))
+                {
+                    category = found;
+                    return true;
+                }
+            }
             return false;
         }
 
-        private static string CategoryFor(string name)
+        /// <summary>Splits a PascalCase/camelCase/underscore field name into lowercase words.</summary>
+        private static List<string> Tokenize(string name)
         {
-            string n = name.ToLowerInvariant();
-            if (n.Contains("key") || n.Contains("quest")) return Texts.T("Ключи и задания", "Keys & quests");
-            if (n.Contains("map") || n.Contains("journal")) return Texts.T("Карты и журнал", "Maps & journal");
-            if (n.Contains("tool") || n.Contains("crest")) return Texts.T("Инструменты", "Tools");
-            if (n.Contains("ability") || n.Contains("skill")) return Texts.T("Способности", "Abilities");
-            return Texts.T("Предметы", "Items");
+            List<string> words = new List<string>();
+            if (string.IsNullOrEmpty(name)) return words;
+
+            StringBuilder current = new StringBuilder();
+            for (int i = 0; i < name.Length; i++)
+            {
+                char c = name[i];
+                if (c == '_' || c == '-' || c == ' ')
+                {
+                    FlushWord(words, current);
+                    continue;
+                }
+
+                bool startsNewWord = false;
+                if (current.Length > 0)
+                {
+                    char prev = name[i - 1];
+                    if (char.IsUpper(c) && (char.IsLower(prev) || char.IsDigit(prev)))
+                        startsNewWord = true; // fooBar -> foo | Bar
+                    else if (char.IsUpper(c) && char.IsUpper(prev) && i + 1 < name.Length && char.IsLower(name[i + 1]))
+                        startsNewWord = true; // HTMLBar -> HTML | Bar (acronym boundary)
+                    else if (char.IsDigit(c) != char.IsDigit(prev))
+                        startsNewWord = true; // foo2 -> foo | 2, 2foo -> 2 | foo
+                }
+
+                if (startsNewWord) FlushWord(words, current);
+                current.Append(char.ToLowerInvariant(c));
+            }
+            FlushWord(words, current);
+            return words;
+        }
+
+        private static void FlushWord(List<string> words, StringBuilder current)
+        {
+            if (current.Length > 0)
+            {
+                words.Add(current.ToString());
+                current.Length = 0;
+            }
         }
 
         private static string PrettyName(string value)
