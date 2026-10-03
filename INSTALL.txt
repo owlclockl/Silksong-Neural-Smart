@@ -1,0 +1,25 @@
+RosaryShare — быстрая установка / Quick install
+=================================================
+
+RUS:
+1. Убедитесь, что установлены BepInEx 5 и Silksong Multiplayer Mod (XvX).
+2. Скопируйте RosaryShare.dll в папку:
+     <Hollow Knight Silksong>\BepInEx\plugins\
+3. Запустите игру, создайте лобби или встаньте в лобби друга,
+   загрузите сохранение.
+4. Нажмите F7 — окно обмена бусинами. Клавиша G — быстрая отправка 100 бусин.
+5. Настройки: BepInEx\config\com.silksong.rosaryshare.cfg
+
+Бусины не пропадают: если получатель недоступен, сумма автоматически
+возвращается отправителю.
+
+ENG:
+1. Make sure BepInEx 5 and Silksong Multiplayer Mod (XvX) are installed.
+2. Copy RosaryShare.dll into:
+     <Hollow Knight Silksong>\BepInEx\plugins\
+3. Launch the game, host or join a Steam lobby, load a save.
+4. Press F7 for the bead sharing window. G quick-sends 100 beads.
+5. Settings: BepInEx/config/com.silksong.rosaryshare.cfg
+
+No lost beads: if the recipient is unavailable, the amount is
+automatically refunded to the sender.

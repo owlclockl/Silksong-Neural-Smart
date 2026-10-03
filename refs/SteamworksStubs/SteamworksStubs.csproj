@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    СПРАВОЧНЫЙ СТАБ com.rlabrecque.steamworks.net (Steamworks.NET).
+    Сигнатуры взяты из исходников rlabrecque/Steamworks.NET. Только то,
+    что реально нужно RosaryShare (Steam P2P + лобби + имена). Тела пустые:
+    стаб никогда не едет в дистрибутив мода; в игре загружается настоящая
+    библиотека, которую Team Cherry поставляет в составе Silksong.
+    Собирается только когда папка с игрой не найдена (--game не задан).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>com.rlabrecque.steamworks.net</AssemblyName>
+    <RootNamespace>Steamworks</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <NoWarn>$(NoWarn);CS0649</NoWarn>
+  </PropertyGroup>
+
+</Project>

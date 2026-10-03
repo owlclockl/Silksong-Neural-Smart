@@ -1,0 +1,100 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyName>RosaryShare</AssemblyName>
+    <Product>RosaryShare</Product>
+    <Description>RosaryShare — передача бусин между игроками для мода Silksong Multiplayer (XvX)</Description>
+    <Version>1.0.0</Version>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <RootNamespace>RosaryShare</RootNamespace>
+    <AssemblyTitle>RosaryShare</AssemblyTitle>
+    <DebugType>portable</DebugType>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <NoWarn>$(NoWarn);CS0649;CS0414;MSB3277;NETSDK1138</NoWarn>
+  </PropertyGroup>
+
+  <!--
+    ================================================================
+    АВТОПОИСК УСТАНОВЛЕННОЙ ИГРЫ
+    Если Silksong найден, сборка идёт против реальных сборок игры и BepInEx
+    (самый надёжный путь, интернет не нужен).
+    Путь можно задать вручную:  -p:SilksongPath="D:\Games\Hollow Knight Silksong"
+    или переменной окружения SILKSONG_PATH.
+
+    Если игры нет — сборка идёт против NuGet (BepInEx.Core + UnityEngine.Modules)
+    и локальных справочных стабов refs/ (Assembly-CSharp, Steamworks.NET),
+    чьи сигнатуры повторяют настоящие сборки игры. Стабы в мод НЕ попадают.
+    ================================================================
+  -->
+  <PropertyGroup Label="SilksongDetection">
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND '$(SILKSONG_PATH)' != ''">$(SILKSONG_PATH)</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('C:\Program Files (x86)\Steam\steamapps\common\Hollow Knight Silksong')">C:\Program Files (x86)\Steam\steamapps\common\Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('C:\Program Files\Steam\steamapps\common\Hollow Knight Silksong')">C:\Program Files\Steam\steamapps\common\Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('D:\SteamLibrary\steamapps\common\Hollow Knight Silksong')">D:\SteamLibrary\steamapps\common\Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('E:\SteamLibrary\steamapps\common\Hollow Knight Silksong')">E:\SteamLibrary\steamapps\common\Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('$(HOME)/.steam/steam/steamapps/common/Hollow Knight Silksong')">$(HOME)/.steam/steam/steamapps/common/Hollow Knight Silksong</SilksongPath>
+    <SilksongPath Condition="'$(SilksongPath)' == '' AND Exists('$(HOME)/.local/share/Steam/steamapps/common/Hollow Knight Silksong')">$(HOME)/.local/share/Steam/steamapps/common/Hollow Knight Silksong</SilksongPath>
+
+    <SilksongManagedPath Condition="'$(SilksongManagedPath)' == '' AND '$(SilksongPath)' != ''">$(SilksongPath)/Hollow Knight Silksong_Data/Managed</SilksongManagedPath>
+    <SilksongBepInExCore Condition="'$(SilksongBepInExCore)' == '' AND '$(SilksongPath)' != ''">$(SilksongPath)/BepInEx/core</SilksongBepInExCore>
+
+    <UseGameReferences Condition="'$(UseGameReferences)' == '' AND Exists('$(SilksongManagedPath)/Assembly-CSharp.dll') AND Exists('$(SilksongManagedPath)/com.rlabrecque.steamworks.net.dll') AND Exists('$(SilksongManagedPath)/UnityEngine.CoreModule.dll') AND Exists('$(SilksongBepInExCore)/BepInEx.dll')">true</UseGameReferences>
+  </PropertyGroup>
+
+  <Target Name="ReportReferenceMode" BeforeTargets="BeforeBuild">
+    <Message Importance="high" Condition="'$(UseGameReferences)' == 'true'" Text="[RosaryShare] Сборка против локальных сборок игры: $(SilksongPath)" />
+    <Message Importance="high" Condition="'$(UseGameReferences)' != 'true'" Text="[RosaryShare] Игра не найдена — сборка против NuGet и справочных стабов refs/." />
+  </Target>
+
+  <!-- ================= Реальные сборки игры (предпочтительно) ================= -->
+  <ItemGroup Condition="'$(UseGameReferences)' == 'true'">
+    <Reference Include="BepInEx">
+      <HintPath>$(SilksongBepInExCore)/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(SilksongManagedPath)/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="com.rlabrecque.steamworks.net">
+      <HintPath>$(SilksongManagedPath)/com.rlabrecque.steamworks.net.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(SilksongManagedPath)/UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- ============ Без игры: NuGet (BepInEx/Unity) + справочные стабы ============ -->
+  <ItemGroup Condition="'$(UseGameReferences)' != 'true'">
+    <PackageReference Include="BepInEx.Core" Version="5.4.23.4" PrivateAssets="all" />
+    <PackageReference Include="UnityEngine.Modules" Version="6000.0.50" IncludeAssets="compile" PrivateAssets="all" />
+
+    <ProjectReference Include="refs/GameStubs/GameStubs.csproj" Private="false" />
+    <ProjectReference Include="refs/SteamworksStubs/SteamworksStubs.csproj" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework.TrimEnd(`0123456789`))' == 'net'">
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

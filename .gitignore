@@ -1,0 +1,18 @@
+# Сборка
+bin/
+obj/
+dist/
+build.log
+
+# Локальный путь к игре (используется build.bat / build.sh)
+silksong.path.txt
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+.DS_Store

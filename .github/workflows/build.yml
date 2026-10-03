@@ -1,0 +1,55 @@
+name: Build RosaryShare
+
+on:
+  push:
+    branches: ["main", "arena/*", "feature/*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore RosaryShare.csproj --nologo
+
+      - name: Build (Release)
+        run: dotnet build RosaryShare.csproj -c Release --no-restore --nologo -v minimal
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $pkg = "dist/BepInEx/plugins/RosaryShare"
+          New-Item -ItemType Directory -Force -Path $pkg | Out-Null
+          Copy-Item "bin/Release/netstandard2.1/RosaryShare.dll" "$pkg/"
+          foreach ($doc in @("README.md", "MANUAL_RU.md", "INSTALL.txt")) {
+            if (Test-Path $doc) { Copy-Item $doc "$pkg/" }
+          }
+          Compress-Archive -Path "dist/BepInEx" -DestinationPath "dist/RosaryShare.zip" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RosaryShare-dll
+          path: dist/
+          retention-days: 30
+
+      - name: Assembly references sanity check
+        shell: pwsh
+        run: |
+          # Мод ОБЯЗАН ссылаться на сборку с именем com.rlabrecque.steamworks.net
+          # и Assembly-CSharp — иначе в игре будет TypeLoadException.
+          $bytes = [System.IO.File]::ReadAllBytes("bin/Release/netstandard2.1/RosaryShare.dll")
+          $text  = [System.Text.Encoding]::ASCII.GetString($bytes)
+          if ($text -notmatch "com\.rlabrecque\.steamworks\.net") { throw "Reference com.rlabrecque.steamworks.net is missing!" }
+          if ($text -notmatch "Assembly-CSharp") { throw "Reference Assembly-CSharp is missing!" }
+          Write-Host "Reference check OK"
