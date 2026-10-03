@@ -81,6 +81,53 @@ namespace RosaryShare
             get { return T("Журнал", "History"); }
         }
 
+        // ---- Инвентарь-решётка ----
+
+        public static string ItemsHeader
+        {
+            get { return T("Пожитки", "Satchel"); }
+        }
+
+        public static string ItemsTab
+        {
+            get { return T("Вещи", "Items"); }
+        }
+
+        /// <summary>Пометка о том, что в решётке только безопасные предметы.</summary>
+        public static string SafeOnly
+        {
+            get { return T("только безопасные", "safe only"); }
+        }
+
+        public static string SafeNote
+        {
+            get
+            {
+                return T("В решётке только безопасные вещи — способности, маски, катушки, гербы и сюжет не передаются",
+                    "The grid holds safe goods only — abilities, masks, spools, crests and story flags are never traded");
+            }
+        }
+
+        public static string NoItems
+        {
+            get { return T("В сумке нет предметов, которые можно передать", "No transferable goods in your satchel"); }
+        }
+
+        public static string ItemUnique
+        {
+            get { return T("уникальный предмет", "unique item"); }
+        }
+
+        public static string PickItem
+        {
+            get { return T("Выберите вещь в решётке", "Pick a good from the grid"); }
+        }
+
+        public static string ItemsCountFormat
+        {
+            get { return T("вещей: {0}", "goods: {0}"); }
+        }
+
         public static string NoPlayers
         {
             get { return T("Других игроков в лобби пока нет", "No other players in the lobby yet"); }

@@ -12,9 +12,13 @@ session, but speaks its own protocol over the free **Steam P2P channel 1**
 
 ## Features
 
-- 🎁 Send beads, shell shards, or discovered inventory items to anyone in your lobby — **F7** (or **LB+RB** on a gamepad) opens a standalone sharing window
+- 🎁 Send beads, shell shards, or inventory goods to anyone in your lobby — **F7** (or **LB+RB** on a gamepad) opens a standalone sharing window
   over the game; it does not replace or embed into the native inventory.
-- 🛟 **Only safe items are tradeable.** The "Items" tab is built from an explicit allow-list
+- 🎒 **The "Items" tab is a real inventory grid** — square slots with the game's own item
+  icons, a `×N` stack badge, hover tooltips and a scrollbar, the way an inventory (or a
+  STALKER-style backpack) looks. Click a slot — or walk the grid with the arrows/D-pad —
+  then pick how many to hand over. Only goods you actually carry take up a slot.
+- 🛟 **Only safe items are tradeable.** The grid is built from an explicit allow-list
   of plain collectibles — keys, relics (Bone Scrolls, Weaver Effigies, Rune Harps, Choral
   Commandments, Psalm Cylinders, Arcane Eggs), fleas, keepsakes (Mementos, Memory Lockets)
   and crafting materials (Craftmetal, Pale Oil, Mossberries). Abilities/skills, crests and
@@ -113,9 +117,25 @@ error), the amount is refunded automatically — with a notification.
 | `[Transfers] Send Cooldown Seconds` | `1.5` | Delay between sends. |
 | `[Transfers] Ack Timeout Seconds` | `6` | Delivery wait before auto-refund. |
 
+## The item grid
+
+The "Items" tab is an inventory grid, not a one-at-a-time selector:
+
+- 7 × 3 square slots, each holding one kind of good with its real in-game icon
+  (procedural fallback icon while the game asset is still loading) and a `×N` badge
+  for stacks. Empty slots stay visible, so the grid reads like an inventory.
+- Only goods you currently carry occupy a slot — the grid rebuilds itself a few times a
+  second, so an item disappears as soon as you hand over the last one.
+- Mouse: hover for a tooltip (name · category · amount), click to select.
+  Keyboard/gamepad: the arrows/D-pad walk the grid cell by cell and auto-scroll;
+  **LB/RB** change the amount by one, **X** selects the whole stack.
+- The wheel scrolls the grid; a slim gold scrollbar shows where you are.
+- Below the grid: the selected good, how many you have, the amount stepper with an
+  "All" button, and the send button.
+
 ## Safe items only
 
-RosaryShare never guesses which arbitrary save fields look "item-like". The Items tab is
+RosaryShare never guesses which arbitrary save fields look "item-like". The grid is
 built from the game's own `PlayerData` save fields at runtime (so new patches don't need a
 mod update), but every field has to pass a strict allow-list before it ever shows up:
 
