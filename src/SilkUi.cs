@@ -100,6 +100,29 @@ namespace RosaryShare
             GUI.color = prev;
         }
 
+        /// <summary>
+        /// Рисует настоящий Unity Sprite, сохраняя его прямоугольник в атласе.
+        /// Нельзя просто взять sprite.texture: тогда вместо иконки может
+        /// появиться весь атлас предметов.
+        /// </summary>
+        public static void Sprite(Rect rect, UnityEngine.Sprite sprite, Color tint)
+        {
+            if (sprite == null || sprite.texture == null || sprite.texture.width <= 0 || sprite.texture.height <= 0)
+                return;
+
+            Rect source = sprite.textureRect;
+            Rect uv = new Rect(
+                source.x / sprite.texture.width,
+                source.y / sprite.texture.height,
+                source.width / sprite.texture.width,
+                source.height / sprite.texture.height);
+
+            Color prev = GUI.color;
+            GUI.color = tint;
+            GUI.DrawTextureWithTexCoords(rect, sprite.texture, uv);
+            GUI.color = prev;
+        }
+
         public static void FillColor(Rect rect, Color color)
         {
             Fill(rect, UiKit.Solid(Color.white), color);

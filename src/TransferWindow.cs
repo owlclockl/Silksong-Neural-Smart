@@ -655,7 +655,9 @@ namespace RosaryShare
             Rect iconRect = new Rect(itemWell.x + 3f * s, itemWell.y + (itemWell.height - iconSize) * 0.5f,
                 iconSize, iconSize);
             if (item.Sprite != null)
-                SilkUi.Fill(iconRect, item.Sprite, Color.white);
+                SilkUi.Sprite(iconRect, item.Sprite, Color.white);
+            else if (item.FallbackSprite != null)
+                SilkUi.Fill(iconRect, item.FallbackSprite, Color.white);
 
             SilkUi.Text(new Rect(iconRect.xMax + 6f * s, itemWell.y, itemWell.width - iconSize - 12f * s, itemWell.height),
                 item.Name + "  [" + item.Category + "]", SilkUi.Item, UiKit.Bone);

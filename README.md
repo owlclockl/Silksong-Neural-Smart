@@ -50,7 +50,7 @@ Or build & auto-install: `build.bat --deploy`.
 1. Create or join a lobby via the multiplayer mod menu as usual.
 2. Load a save file.
 3. Press **F7** (mouse/keyboard) or hold **LB+RB** (gamepad) to open the standalone window: pick a player
-   (Steam names), choose beads, shell shards, or an inventory item with its icon and an amount (100 / 500 / 1000 / 5000 / All, the −/+ stepper
+   (Steam names), choose beads, shell shards, or an inventory item with its original game icon and an amount (100 / 500 / 1000 / 5000 / All, the −/+ stepper
    or a custom value), press **Bestow**.
 4. The recipient gets the selected resource instantly plus a toast;
    the sender gets a delivery confirmation.
