@@ -64,7 +64,7 @@ namespace RosaryShare
         private const int MaxHistoryEntries = 50;
         private const int MaxProcessedTx = 1024;
 
-        private static readonly Random Rng = new Random();
+        private static readonly System.Random Rng = new System.Random();
 
         private readonly List<RemotePlayer> _players = new List<RemotePlayer>();
         private readonly List<PendingTx> _pending = new List<PendingTx>();
