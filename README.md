@@ -12,13 +12,13 @@ session, but speaks its own protocol over the free **Steam P2P channel 1**
 
 ## Features
 
-- 🎁 Send beads, shell shards, or discovered inventory items to anyone in your lobby — an **Sharing** tab inside the items/map inventory, or **F7**
-  (or **LB+RB** on a gamepad).
+- 🎁 Send beads, shell shards, or discovered inventory items to anyone in your lobby — **F7** (or **LB+RB** on a gamepad) opens a standalone sharing window
+  over the game; it does not replace or embed into the native inventory.
 - 🕯 **Silksong-styled menu**: dimmed background, carved panel with gold filigree,
   crimson silk highlights, serif caps — it belongs in Hallownest, not in a debug overlay.
 - 🖱 **Its own mouse cursor** — the game hides the system one, so the menu draws a
   needle-and-bead pointer (the OS cursor can be used instead, see `Cursor Mode`).
-- 🎮 **Full gamepad support**: open/close, navigate, pick a player and an amount
+- 🎮 **Full gamepad support**: open/close, navigate, pick a player, an item and an amount,
   and send without touching the keyboard. Button prompts (A/B/LB/RB) are shown
   in the menu and follow the controller layout (Xbox/PlayStation).
 - ⚡ Quick-send a fixed amount (default 100) with **G**, no window needed.
@@ -35,7 +35,7 @@ session, but speaks its own protocol over the free **Steam P2P channel 1**
 2. BepInEx 5 (x64).
 3. **Silksong Multiplayer Mod (XvX)** — the one with Create Lobby / Invite Players
    buttons (tested against 0.11.4 and 0.12.x).
-4. Every player exchanging items needs RosaryShare 1.2.0 or newer installed.
+4. Every player exchanging items needs RosaryShare 1.3.0 or newer installed.
 
 ## Installation
 
@@ -49,8 +49,8 @@ Or build & auto-install: `build.bat --deploy`.
 
 1. Create or join a lobby via the multiplayer mod menu as usual.
 2. Load a save file.
-3. Press **F7** (mouse/keyboard) or hold **LB+RB** (gamepad): pick a player
-   (Steam names), choose beads, shell shards, or an inventory item and an amount (100 / 500 / 1000 / 5000 / All, the −/+ stepper
+3. Press **F7** (mouse/keyboard) or hold **LB+RB** (gamepad) to open the standalone window: pick a player
+   (Steam names), choose beads, shell shards, or an inventory item with its original game icon and an amount (100 / 500 / 1000 / 5000 / All, the −/+ stepper
    or a custom value), press **Bestow**.
 4. The recipient gets the selected resource instantly plus a toast;
    the sender gets a delivery confirmation.
@@ -80,7 +80,6 @@ error), the amount is refunded automatically — with a notification.
 | Setting | Default | Description |
 |---|---|---|
 | `[Interface] Language` | `Auto` | `Auto` / `English` / `Russian`. |
-| `[Interface] Inventory Integration` | `true` | Show the Sharing tab while the native items/map inventory is open. |
 | `[Interface] Show Toasts` | `true` | Toast notifications about transfers. |
 | `[Interface] UI Scale` | `1.0` | Extra menu scale on top of the automatic one. |
 | `[Interface] Serif Font` | `true` | Game-like serif system font. |
