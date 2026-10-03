@@ -479,13 +479,24 @@ namespace RosaryShare
             TransferManager mgr = TransferManager.Instance;
             float x0 = panel.x + Pad * s;
 
+            int count = mgr != null ? mgr.Players.Count : 0;
+            ClampPlayerWindow(count);
+            int last = Mathf.Min(count, _playerOffset + VisiblePlayers);
+
             SilkUi.Text(new Rect(x0, panel.y + 118f * s, ListW * s, 20f * s),
                 Texts.PlayersHeader.ToUpperInvariant(), SilkUi.Section, UiKit.Gold);
+
+            // «1–6 / 9» в строке заголовка, чтобы не занимать место под списком
+            if (count > VisiblePlayers)
+            {
+                SilkUi.Text(new Rect(x0, panel.y + 118f * s, ListW * s, 20f * s),
+                    (_playerOffset + 1) + "–" + last + " / " + count,
+                    SilkUi.ItemRight, UiKit.BoneDim);
+            }
 
             Rect well = new Rect(x0, panel.y + 142f * s, ListW * s, RowH * VisiblePlayers * s);
             SilkUi.Well(well, s);
 
-            int count = mgr != null ? mgr.Players.Count : 0;
             if (count == 0)
             {
                 _playerOffset = 0;
@@ -493,9 +504,6 @@ namespace RosaryShare
                 return;
             }
 
-            ClampPlayerWindow(count);
-
-            int last = Mathf.Min(count, _playerOffset + VisiblePlayers);
             for (int i = _playerOffset; i < last; i++)
             {
                 TransferManager.RemotePlayer player = mgr.Players[i];
@@ -520,11 +528,6 @@ namespace RosaryShare
             if (last < count)
                 SilkUi.Text(new Rect(well.xMax - 22f * s, well.yMax - 18f * s, 18f * s, 16f * s), "▼", SilkUi.Hint, arrow);
 
-            if (count > VisiblePlayers)
-            {
-                SilkUi.Text(new Rect(x0, well.yMax + 6f * s, ListW * s, 18f * s),
-                    (_playerOffset + 1) + "–" + last + " / " + count, SilkUi.Hint, UiKit.BoneDim);
-            }
         }
 
         private void DrawAmount(Rect panel, float s)
@@ -648,10 +651,13 @@ namespace RosaryShare
             float x0 = panel.x + Pad * s;
             float width = panel.width - Pad * s * 2f;
 
-            SilkUi.Text(new Rect(x0, panel.y + 372f * s, width, 20f * s),
+            SilkUi.Divider(new Rect(x0, panel.y + 348f * s, width, Mathf.Max(1f, s)),
+                new Color(UiKit.GoldDim.r, UiKit.GoldDim.g, UiKit.GoldDim.b, 0.65f), true);
+
+            SilkUi.Text(new Rect(x0, panel.y + 362f * s, width, 20f * s),
                 Texts.HistoryHeader.ToUpperInvariant(), SilkUi.Section, UiKit.Gold);
 
-            Rect well = new Rect(x0, panel.y + 396f * s, width, 116f * s);
+            Rect well = new Rect(x0, panel.y + 386f * s, width, 126f * s);
             SilkUi.Well(well, s);
 
             if (mgr == null || mgr.History.Count == 0)
@@ -922,7 +928,7 @@ namespace RosaryShare
             int delta = Event.current.delta.y > 0f ? 1 : -1;
 
             Rect list = new Rect(panel.x + Pad * s, panel.y + 142f * s, ListW * s, RowH * VisiblePlayers * s);
-            Rect journal = new Rect(panel.x + Pad * s, panel.y + 396f * s, panel.width - Pad * s * 2f, 116f * s);
+            Rect journal = new Rect(panel.x + Pad * s, panel.y + 386f * s, panel.width - Pad * s * 2f, 126f * s);
 
             if (list.Contains(mouse))
             {

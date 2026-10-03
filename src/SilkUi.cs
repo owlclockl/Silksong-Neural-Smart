@@ -243,8 +243,18 @@ namespace RosaryShare
                     : new Color(UiKit.GoldDim.r, UiKit.GoldDim.g, UiKit.GoldDim.b, 0.45f));
             Frame(rect, border, Mathf.Max(1f, scale));
 
+            // у тесно стоящих кнопок фокус показываем ореолом и яркой рамкой,
+            // иначе боковые ромбы налезали бы на соседей
             if (focused)
-                FocusMarkers(rect, scale);
+            {
+                float pulse = 0.62f + 0.38f * Mathf.Sin(Time.unscaledTime * 5.5f);
+                float halo = 14f * scale;
+                Fill(new Rect(rect.x - halo, rect.y - halo, rect.width + halo * 2f, rect.height + halo * 2f),
+                    UiKit.Glow, new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.16f + 0.14f * pulse));
+                Frame(rect, new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.75f + 0.25f * pulse),
+                    Mathf.Max(1f, 2f * scale));
+                Diamond(new Vector2(rect.x + 7f * scale, rect.center.y), 7f * scale, UiKit.Gold);
+            }
 
             Color color = !enabled
                 ? UiKit.BoneDim
