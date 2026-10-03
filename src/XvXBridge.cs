@@ -84,20 +84,23 @@ namespace RosaryShare
         {
             try
             {
-                GameObject go = GameObject.Find(LobbyObjectName);
-                if (go == null) go = GameObject.Find(LobbyObjectNameAlt);
-                if (go == null) return null;
-
-                MonoBehaviour[] components = go.GetComponents<MonoBehaviour>();
+                // Мод XvX пересоздаёт LobbyManager при каждом возврате в главное
+                // меню и может накапливать дубликаты — ищем по ВСЕМ объектам
+                // с нужным именем и предпочитаем RoomManager в состоянии enterRoom.
                 MonoBehaviour fallback = null;
 
-                foreach (MonoBehaviour mb in components)
+                GameObject[] sceneObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
+                foreach (GameObject go in sceneObjects)
                 {
-                    if (!mb) continue; // учитывает и реальный null, и «фейковый» null уничтоженных Unity-объектов
-                    Type type = mb.GetType();
-                    if (type.FullName == RoomManagerTypeName)
+                    if (go == null) continue;
+                    if (go.name != LobbyObjectName && go.name != LobbyObjectNameAlt) continue;
+
+                    foreach (MonoBehaviour mb in go.GetComponents<MonoBehaviour>())
                     {
-                        // пересозданные объекты: предпочитаем тот, что в состоянии enterRoom
+                        if (!mb) continue; // и реальный null, и «фейковый» null уничтоженных Unity-объектов
+                        Type type = mb.GetType();
+                        if (type.FullName != RoomManagerTypeName) continue;
+
                         if (fallback == null) fallback = mb;
                         try
                         {

@@ -35,6 +35,9 @@ namespace RosaryShare
                 return tex;
 
             tex = new Texture2D(1, 1);
+            // чтобы Unity не собрал наши текстуры через Resources.UnloadUnusedAssets
+            // игрок смены сцены — они нужны стилям окна всю сессию
+            tex.hideFlags = HideFlags.HideAndDontSave;
             tex.SetPixel(0, 0, new Color(r, g, b, a));
             tex.Apply();
             Textures[key] = tex;
