@@ -141,6 +141,7 @@ namespace RosaryShare
         private static bool TryGet(string key, out ItemEntry entry)
         {
             EnsureCatalog();
+            entry = null;
             return !string.IsNullOrEmpty(key) && ByKey.TryGetValue(key, out entry);
         }
 
