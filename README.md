@@ -1,7 +1,7 @@
 # RosaryShare
 
 A standalone companion mod for **Silksong Multiplayer Mod (XvX)** that lets players
-**send rosaries (beads) and shell shards to each other** inside a Steam lobby.
+**send rosaries (beads), shell shards, and inventory items to each other** inside a Steam lobby.
 
 > 🇷🇺 Подробная русская инструкция — в [MANUAL_RU.md](MANUAL_RU.md).
 
@@ -12,7 +12,7 @@ session, but speaks its own protocol over the free **Steam P2P channel 1**
 
 ## Features
 
-- 🎁 Send beads or shell shards to anyone in your lobby — an **Sharing** tab inside the items/map inventory, or **F7**
+- 🎁 Send beads, shell shards, or discovered inventory items to anyone in your lobby — an **Sharing** tab inside the items/map inventory, or **F7**
   (or **LB+RB** on a gamepad).
 - 🕯 **Silksong-styled menu**: dimmed background, carved panel with gold filigree,
   crimson silk highlights, serif caps — it belongs in Hallownest, not in a debug overlay.
@@ -35,7 +35,7 @@ session, but speaks its own protocol over the free **Steam P2P channel 1**
 2. BepInEx 5 (x64).
 3. **Silksong Multiplayer Mod (XvX)** — the one with Create Lobby / Invite Players
    buttons (tested against 0.11.4 and 0.12.x).
-4. Every player exchanging resources needs RosaryShare 1.1.0 or newer installed (older versions cannot receive shell shards).
+4. Every player exchanging items needs RosaryShare 1.2.0 or newer installed.
 
 ## Installation
 
@@ -50,7 +50,7 @@ Or build & auto-install: `build.bat --deploy`.
 1. Create or join a lobby via the multiplayer mod menu as usual.
 2. Load a save file.
 3. Press **F7** (mouse/keyboard) or hold **LB+RB** (gamepad): pick a player
-   (Steam names), choose beads or shell shards and an amount (100 / 500 / 1000 / 5000 / All, the −/+ stepper
+   (Steam names), choose beads, shell shards, or an inventory item and an amount (100 / 500 / 1000 / 5000 / All, the −/+ stepper
    or a custom value), press **Bestow**.
 4. The recipient gets the selected resource instantly plus a toast;
    the sender gets a delivery confirmation.

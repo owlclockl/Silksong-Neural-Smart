@@ -35,7 +35,7 @@ namespace RosaryShare
             public float AtTime;
         }
 
-        public enum ResourceKind { Beads, Shards }
+        public enum ResourceKind { Beads, Shards, Item }
 
         public enum SendError
         {
@@ -61,6 +61,7 @@ namespace RosaryShare
             public int Amount;
             public float Deadline;
             public ResourceKind Resource;
+            public string ItemKey;
         }
 
         private const int MaxPendingTransfers = 16;
@@ -221,6 +222,33 @@ namespace RosaryShare
             return SendError.Ok;
         }
 
+        public SendError TrySendItem(RemotePlayer target, string itemKey, int amount)
+        {
+            if (!XvXBridge.BridgeOk || !InLobby) return SendError.NoLobby;
+            if (!GameBridge.InGame) return SendError.NotInGame;
+            if (target == null || !IsMember(target.Id)) return SendError.NoTarget;
+            if (amount <= 0 || amount > ModConfig.MaxSendAmount) return SendError.InvalidAmount;
+            float now = Time.unscaledTime;
+            if (now < _sendCooldownUntil) return SendError.Cooldown;
+            if (_pending.Count >= MaxPendingTransfers) return SendError.TooManyPending;
+            if (!ItemBridge.TryRemove(itemKey, amount)) return SendError.NotEnough;
+
+            uint txId = NextTxId();
+            PendingTx pending = new PendingTx { TxId = txId, Target = target.Id,
+                TargetName = target.Name ?? XvXBridge.GetPlayerName(target.Id), Amount = amount,
+                Deadline = now + ModConfig.AckTimeoutSeconds, Resource = ResourceKind.Item, ItemKey = itemKey };
+            _pending.Add(pending);
+            _sendCooldownUntil = now + ModConfig.SendCooldownSeconds;
+            if (!SteamChannel.Send(target.Id, Packets.MakeItemTransfer(txId, amount, XvXBridge.SelfName(), itemKey)))
+            {
+                _pending.Remove(pending);
+                ItemBridge.TryAdd(itemKey, amount);
+                return SendError.NetworkError;
+            }
+            AddHistory(string.Format(Texts.T("→ {0}: {1} × {2} (ожидание…)", "→ {0}: {1} × {2} (pending…)"), pending.TargetName, amount, ItemBridge.NameOf(itemKey)), ToastLog.Kind.Info);
+            return SendError.Ok;
+        }
+
         private static uint NextTxId()
         {
             uint id = ((uint)Rng.Next(0, 0xFFFF) << 16) ^ (_txCounter++);
@@ -260,6 +288,10 @@ namespace RosaryShare
 
                 case PacketKind.TransferShards:
                     OnIncomingTransfer(sender, txId, amount, text, ResourceKind.Shards);
+                    break;
+
+                case PacketKind.TransferItem:
+                    OnIncomingItem(sender, txId, amount, text);
                     break;
 
                 case PacketKind.Ack:
@@ -314,13 +346,30 @@ namespace RosaryShare
             RosarySharePlugin.LogInfo(msg);
         }
 
+        private void OnIncomingItem(CSteamID sender, uint txId, int amount, string payload)
+        {
+            int split = payload != null ? payload.IndexOf('\n') : -1;
+            string senderName = split >= 0 ? payload.Substring(0, split) : XvXBridge.GetPlayerName(sender);
+            string itemKey = split >= 0 ? payload.Substring(split + 1) : string.Empty;
+            if (_processedTx.Contains(txId)) { SteamChannel.Send(sender, Packets.MakeAck(txId)); return; }
+            RememberProcessed(txId);
+            if (!ModConfig.AllowReceive || !GameBridge.InGame || amount <= 0 || amount > ModConfig.MaxReceiveAmount || !ItemBridge.TryAdd(itemKey, amount))
+            {
+                SteamChannel.Send(sender, Packets.MakeReject(txId, "invalid"));
+                return;
+            }
+            SteamChannel.Send(sender, Packets.MakeAck(txId));
+            string msg = string.Format(Texts.T("Получено: {0} × {1} от {2}", "Received: {0} × {1} from {2}"), amount, ItemBridge.NameOf(itemKey), senderName);
+            Toast(ToastLog.Kind.Success, msg); AddHistory("← " + msg, ToastLog.Kind.Success);
+        }
+
         private void OnAck(CSteamID sender, uint txId)
         {
             PendingTx tx = FindPending(txId, sender);
             if (tx == null) return;
             _pending.Remove(tx);
 
-            string msg = string.Format(tx.Resource == ResourceKind.Shards ? Texts.T("Доставлено: {0} получил(а) {1} осколков", "Delivered: {0} received {1} shards") : Texts.T("Доставлено: {0} получил(а) {1} бусин", "Delivered: {0} received {1} beads"), tx.TargetName, tx.Amount);
+            string msg = tx.Resource == ResourceKind.Item ? string.Format(Texts.T("Доставлено: {0} получил(а) {1} × {2}", "Delivered: {0} received {1} × {2}"), tx.TargetName, tx.Amount, ItemBridge.NameOf(tx.ItemKey)) : string.Format(tx.Resource == ResourceKind.Shards ? Texts.T("Доставлено: {0} получил(а) {1} осколков", "Delivered: {0} received {1} shards") : Texts.T("Доставлено: {0} получил(а) {1} бусин", "Delivered: {0} received {1} beads"), tx.TargetName, tx.Amount);
             Toast(ToastLog.Kind.Success, msg);
             AddHistory("✓ " + msg, ToastLog.Kind.Success);
             RosarySharePlugin.LogInfo(msg);
@@ -349,9 +398,9 @@ namespace RosaryShare
 
         private void Refund(PendingTx tx, string reason)
         {
-            if (GameBridge.InGame) { if (tx.Resource == ResourceKind.Shards) GameBridge.AddShards(tx.Amount); else GameBridge.AddGeo(tx.Amount); }
+            if (GameBridge.InGame) { if (tx.Resource == ResourceKind.Item) ItemBridge.TryAdd(tx.ItemKey, tx.Amount); else if (tx.Resource == ResourceKind.Shards) GameBridge.AddShards(tx.Amount); else GameBridge.AddGeo(tx.Amount); }
 
-            string msg = string.Format(tx.Resource == ResourceKind.Shards ? Texts.T("Возврат: {0} осколков ({1})", "Refunded: {0} shards ({1})") : Texts.T("Возврат: {0} бусин ({1})", "Refunded: {0} beads ({1})"), tx.Amount, reason);
+            string msg = tx.Resource == ResourceKind.Item ? string.Format(Texts.T("Возврат: {0} × {1} ({2})", "Refunded: {0} × {1} ({2})"), tx.Amount, ItemBridge.NameOf(tx.ItemKey), reason) : string.Format(tx.Resource == ResourceKind.Shards ? Texts.T("Возврат: {0} осколков ({1})", "Refunded: {0} shards ({1})") : Texts.T("Возврат: {0} бусин ({1})", "Refunded: {0} beads ({1})"), tx.Amount, reason);
             Toast(ToastLog.Kind.Warn, msg);
             AddHistory("↩ " + msg, ToastLog.Kind.Warn);
             RosarySharePlugin.LogInfo(msg + " (tx " + tx.TxId + " -> " + tx.TargetName + ")");
@@ -471,7 +520,7 @@ namespace RosaryShare
             {
                 foreach (PendingTx tx in _pending)
                 {
-                    if (GameBridge.InGame) { if (tx.Resource == ResourceKind.Shards) GameBridge.AddShards(tx.Amount); else GameBridge.AddGeo(tx.Amount); }
+                    if (GameBridge.InGame) { if (tx.Resource == ResourceKind.Item) ItemBridge.TryAdd(tx.ItemKey, tx.Amount); else if (tx.Resource == ResourceKind.Shards) GameBridge.AddShards(tx.Amount); else GameBridge.AddGeo(tx.Amount); }
                     AddHistory(string.Format(tx.Resource == ResourceKind.Shards ? Texts.T("↩ Возврат: {0} осколков (лобби закрыто)", "↩ Refunded: {0} shards (lobby closed)") : Texts.T("↩ Возврат: {0} бусин (лобби закрыто)", "↩ Refunded: {0} beads (lobby closed)"), tx.Amount), ToastLog.Kind.Warn);
                 }
                 _pending.Clear();
