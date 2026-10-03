@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using UnityEngine;
 
 namespace RosaryShare
 {
@@ -18,6 +19,8 @@ namespace RosaryShare
             public string Name;
             public string Category;
             public bool Unique;
+            /// <summary>Иконка предмета для отдельного окна обмена.</summary>
+            public Texture2D Sprite;
             internal FieldInfo Field;
         }
 
@@ -62,6 +65,7 @@ namespace RosaryShare
                     Name = PrettyName(field.Name),
                     Category = CategoryFor(field.Name),
                     Unique = field.FieldType == typeof(bool),
+                    Sprite = UiKit.ItemSprite("pd:" + field.Name, CategoryFor(field.Name)),
                     Field = field,
                 };
                 ItemsInternal.Add(entry);

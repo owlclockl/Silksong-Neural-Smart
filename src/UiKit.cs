@@ -109,6 +109,100 @@ namespace RosaryShare
             return tex;
         }
 
+        /// <summary>
+        /// Маленький процедурный спрайт предмета для внешнего окна обмена.
+        ///
+        /// У PlayerData нет стабильного имени поля со ссылкой на Sprite между
+        /// патчами игры, поэтому предметы получают лёгкие пиктограммы здесь:
+        /// семейство определяется категорией, а форма — стабильным хэшем ключа.
+        /// Так меню не требует AssetBundle, Resources-пути или файлов в папке
+        /// игры и всё равно показывает отдельный значок у каждого предмета.
+        /// </summary>
+        public static Texture2D ItemSprite(string key, string category)
+        {
+            string family = (category ?? string.Empty).ToLowerInvariant();
+            int variant = StableHash(key ?? string.Empty) % 5;
+            string cacheKey = "itemSprite:" + (key ?? string.Empty) + ":" + family + ":" + variant;
+
+            return Make(cacheKey, 48, 48, false, delegate(float u, float v)
+            {
+                return ShadeItemSprite(u, v, family, variant);
+            });
+        }
+
+        private static Color ShadeItemSprite(float u, float v, string family, int variant)
+        {
+            float x = (u - 0.5f) * 2f;
+            float y = (v - 0.5f) * 2f;
+            float d = Mathf.Sqrt(x * x + y * y);
+            Color pixel = new Color(0f, 0f, 0f, 0f);
+
+            // Мягкий ореол и тонкий ободок читаются даже на тёмной панели.
+            float halo = 1f - Mathf.Clamp01((d - 0.32f) / 0.64f);
+            pixel = Over(pixel, new Color(CrimsonDeep.r, CrimsonDeep.g, CrimsonDeep.b, 0.55f), halo * halo * 0.8f);
+            float rim = 1f - Mathf.Clamp01(Mathf.Abs(d - 0.76f) / 0.07f);
+            pixel = Over(pixel, new Color(Gold.r, Gold.g, Gold.b, 0.82f), rim);
+
+            Color primary = Color.Lerp(Crimson, Gold, variant / 4f * 0.35f);
+            Color highlight = Color.Lerp(Bone, Gold, variant / 4f);
+            float shape = 0f;
+
+            if (family.Contains("key") || family.Contains("quest"))
+            {
+                // Ключ: головка, стержень и два зубца.
+                float head = 1f - Mathf.Clamp01((Mathf.Sqrt((x + 0.34f) * (x + 0.34f) + y * y) - 0.22f) / 0.07f);
+                float shaft = x > -0.18f && x < 0.53f
+                    ? 1f - Mathf.Clamp01((Mathf.Abs(y) - 0.075f) / 0.06f) : 0f;
+                float toothA = x > 0.30f && x < 0.48f && y > 0.04f && y < 0.22f ? 1f : 0f;
+                float toothB = x > 0.38f && x < 0.56f && y < -0.04f && y > -0.22f ? 1f : 0f;
+                shape = Mathf.Max(Mathf.Max(head, shaft), Mathf.Max(toothA, toothB));
+            }
+            else if (family.Contains("map") || family.Contains("journal"))
+            {
+                // Свернутый лист с центральным сгибом.
+                float sheet = x > -0.53f && x < 0.53f && y > -0.48f && y < 0.48f ? 1f : 0f;
+                float fold = x > 0.28f && x < 0.55f && y > 0.18f && y < 0.50f ? 0.35f : 0f;
+                float crease = 1f - Mathf.Clamp01((Mathf.Abs(x + 0.04f) - 0.025f) / 0.035f);
+                shape = Mathf.Max(Mathf.Max(sheet, fold), crease * 0.7f);
+            }
+            else if (family.Contains("ability") || family.Contains("skill"))
+            {
+                // Ромб — универсальный знак способности/улучшения.
+                shape = 1f - Mathf.Clamp01((Mathf.Abs(x) + Mathf.Abs(y) - 0.55f) / 0.08f);
+                float core = 1f - Mathf.Clamp01((Mathf.Abs(x) + Mathf.Abs(y) - 0.25f) / 0.06f);
+                pixel = Over(pixel, highlight, core * 0.7f);
+            }
+            else if (family.Contains("tool") || family.Contains("crest"))
+            {
+                // Щиток/инструмент с небольшим шипом сверху.
+                float shield = x > -0.46f && x < 0.46f && y > -0.42f && y < 0.38f
+                    ? 1f - Mathf.Clamp01((Mathf.Abs(x) - (0.46f - Mathf.Max(0f, -y) * 0.20f)) / 0.06f) : 0f;
+                float point = y > 0.25f && y < 0.60f ? 1f - Mathf.Clamp01((Mathf.Abs(x) - (0.20f - (y - 0.25f) * 0.45f)) / 0.06f) : 0f;
+                shape = Mathf.Max(shield, point);
+            }
+            else
+            {
+                // Предметы, реликвии и коллекционные вещи — бусина/талисман.
+                shape = 1f - Mathf.Clamp01((d - 0.34f) / 0.08f);
+                float shine = 1f - Mathf.Clamp01(Mathf.Sqrt((x + 0.13f) * (x + 0.13f) + (y - 0.16f) * (y - 0.16f)) / 0.12f);
+                pixel = Over(pixel, highlight, shine * 0.85f);
+            }
+
+            pixel = Over(pixel, new Color(0.10f, 0.025f, 0.035f, 0.9f), Mathf.Max(0f, shape - 0.18f));
+            pixel = Over(pixel, primary, shape);
+            return pixel;
+        }
+
+        private static int StableHash(string text)
+        {
+            unchecked
+            {
+                int hash = 17;
+                for (int i = 0; i < text.Length; i++) hash = hash * 31 + text[i];
+                return Mathf.Abs(hash == int.MinValue ? int.MaxValue : hash);
+            }
+        }
+
         // ------------------------------------------------------------------
         //  Текстуры окна
         // ------------------------------------------------------------------

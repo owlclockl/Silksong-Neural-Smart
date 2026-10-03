@@ -44,7 +44,6 @@ namespace RosaryShare
         // ---------------- Состояние ----------------
 
         private bool _open;
-        private bool _openedFromInventory;
 
         private CSteamID _selectedId;
         private int _selectedIndex = -1;
@@ -98,21 +97,19 @@ namespace RosaryShare
             GamepadInput.Tick(_open);
             GameBridge.TickInputBlock();
 
-            bool inventoryOpen = ModConfig.InventoryIntegration && GameBridge.InventoryOpen;
+            // The sharing window is deliberately standalone.  It must not be
+            // attached to the game's inventory screen: F7 (or the configured
+            // gamepad combo) is the single entry point and works from any game
+            // scene where a save/lobby is available.
             bool toggleByKey = Input.GetKeyDown(ModConfig.MenuKeyCode);
             bool toggleByPad = ModConfig.MenuCombo != null && ModConfig.MenuCombo.Triggered();
 
+            bool openedWithGamepad = false;
             if (toggleByKey || toggleByPad)
             {
+                openedWithGamepad = toggleByPad && !_open;
                 if (toggleByPad) _pointerMode = false;
-                if (!_open) _openedFromInventory = inventoryOpen;
                 Toggle();
-            }
-
-            if (_open && _openedFromInventory && !inventoryOpen)
-            {
-                Close();
-                return;
             }
 
             if (!_open)
@@ -125,7 +122,7 @@ namespace RosaryShare
             }
 
             TrackPointer();
-            HandleMenuInput();
+            HandleMenuInput(openedWithGamepad);
 
             if (!Input.GetMouseButton(0) && !GamepadInput.ConfirmHeld())
                 _repeatId = null;
@@ -172,7 +169,7 @@ namespace RosaryShare
 
             SaveCursor();
             ApplyCursorState();
-            if (!_openedFromInventory) GameBridge.SetInputBlocked(true);
+            GameBridge.SetInputBlocked(true);
 
             if (!_loggedBackend)
             {
@@ -186,7 +183,6 @@ namespace RosaryShare
         private void Close()
         {
             _open = false;
-            _openedFromInventory = false;
             _activate = false;
             _navX = 0;
             _navY = 0;
@@ -241,7 +237,7 @@ namespace RosaryShare
             }
         }
 
-        private void HandleMenuInput()
+        private void HandleMenuInput(bool openedWithGamepad)
         {
             // «фронты» прошлого кадра уже отрисованы — начинаем с чистого листа
             _activate = false;
@@ -249,8 +245,9 @@ namespace RosaryShare
             _navY = 0;
 
             // --- закрытие ---
-            if (Input.GetKeyDown(KeyCode.Escape) || GamepadInput.CancelPressed() ||
-                GamepadInput.Pressed(GamepadInput.Btn.Start))
+            if (Input.GetKeyDown(KeyCode.Escape) ||
+                (!openedWithGamepad && (GamepadInput.CancelPressed() ||
+                    GamepadInput.Pressed(GamepadInput.Btn.Start))))
             {
                 Close();
                 return;
@@ -277,7 +274,7 @@ namespace RosaryShare
             _navY = navY;
 
             // --- подтверждение ---
-            if (GamepadInput.ConfirmPressed() ||
+            if ((!openedWithGamepad && GamepadInput.ConfirmPressed()) ||
                 (!_textFieldFocused && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))))
             {
                 _activate = true;
@@ -285,12 +282,17 @@ namespace RosaryShare
             }
 
             // --- быстрые действия геймпада ---
-            if (GamepadInput.Pressed(GamepadInput.Btn.LeftBumper)) CyclePreset(-1);
-            if (GamepadInput.Pressed(GamepadInput.Btn.RightBumper)) CyclePreset(1);
-            if (GamepadInput.Pressed(GamepadInput.Btn.Alt)) SetAmount(EffectiveBalance());
+            // Не используем тот же фронт, который только что открыл меню:
+            // например LB+X должно открыть окно, а не сразу выбрать «Всё».
+            if (!openedWithGamepad)
+            {
+                if (GamepadInput.Pressed(GamepadInput.Btn.LeftBumper)) CyclePreset(-1);
+                if (GamepadInput.Pressed(GamepadInput.Btn.RightBumper)) CyclePreset(1);
+                if (GamepadInput.Pressed(GamepadInput.Btn.Alt)) SetAmount(Mathf.Min(EffectiveBalance(), ModConfig.MaxSendAmount));
 
-            if (GamepadInput.Pressed(GamepadInput.Btn.LeftTrigger)) ScrollLog(-1);
-            if (GamepadInput.Pressed(GamepadInput.Btn.RightTrigger)) ScrollLog(1);
+                if (GamepadInput.Pressed(GamepadInput.Btn.LeftTrigger)) ScrollLog(-1);
+                if (GamepadInput.Pressed(GamepadInput.Btn.RightTrigger)) ScrollLog(1);
+            }
         }
 
         private void KeyboardNavigation(out int x, out int y)
@@ -395,12 +397,8 @@ namespace RosaryShare
 
         private void OnGUI()
         {
-            if (!_open)
-            {
-                if (ModConfig.InventoryIntegration && GameBridge.InventoryOpen)
-                    DrawInventoryTab();
-                return;
-            }
+            // This is an independent overlay, not a tab in the native inventory.
+            if (!_open) return;
 
             float scale = ComputeScale();
             SilkUi.EnsureStyles(scale);
@@ -412,7 +410,7 @@ namespace RosaryShare
                 Mathf.Round(PanelW * scale),
                 Mathf.Round(PanelH * scale));
 
-            if (!_openedFromInventory) DrawBackdrop();
+            DrawBackdrop();
 
             _focusables.Clear();
 
@@ -430,23 +428,6 @@ namespace RosaryShare
             {
                 ProcessNavigation();
                 DrawSoftCursor(scale);
-            }
-        }
-
-        private void DrawInventoryTab()
-        {
-            float s = Mathf.Clamp(Mathf.Min(Screen.width / 1600f, Screen.height / 900f), 0.7f, 1.6f);
-            SilkUi.EnsureStyles(s);
-            GUI.depth = -510;
-            Rect tab = new Rect(Screen.width - 250f * s, 32f * s, 210f * s, 42f * s);
-            Vector2 mouse = Event.current.mousePosition;
-            bool hover = tab.Contains(mouse);
-            SilkUi.SmallButton(tab, Texts.T("ОБМЕН", "SHARING"), false, hover, false, true, s);
-            if (Event.current.type == EventType.MouseDown && Event.current.button == 0 && hover)
-            {
-                _openedFromInventory = true;
-                Open();
-                Event.current.Use();
             }
         }
 
@@ -617,8 +598,9 @@ namespace RosaryShare
             Rect allRect = new Rect(rightX + PresetAmounts.Length * (buttonW + gap), presetY, buttonW, presetH);
             bool allHover, allFocused;
             bool allClicked = Control(FocusAll, allRect, false, out allHover, out allFocused);
-            SilkUi.SmallButton(allRect, Texts.AllBeads, _amount > 0 && _amount == EffectiveBalance(), allHover, allFocused, true, s);
-            if (allClicked) SetAmount(EffectiveBalance());
+            int maxSendable = Mathf.Min(EffectiveBalance(), ModConfig.MaxSendAmount);
+            SilkUi.SmallButton(allRect, Texts.AllBeads, _amount > 0 && _amount == maxSendable, allHover, allFocused, true, s);
+            if (allClicked) SetAmount(maxSendable);
 
             // --- своё значение ---
             float stepY = panel.y + 186f * s;
@@ -662,8 +644,20 @@ namespace RosaryShare
             if (Control(FocusItemNext, next, false, out nh, out nf)) { _itemIndex = (_itemIndex + 1) % items.Count; SelectCurrentItem(); }
             SilkUi.SmallButton(prev, "◀", false, ph, pf, true, s);
             SilkUi.SmallButton(next, "▶", false, nh, nf, true, s);
-            SilkUi.Well(new Rect(prev.xMax + 6f * s, prev.y, rightW - 96f * s, prev.height), s);
-            SilkUi.Text(new Rect(prev.xMax + 12f * s, prev.y, rightW - 108f * s, prev.height),
+
+            Rect itemWell = new Rect(prev.xMax + 6f * s, prev.y, rightW - 96f * s, prev.height);
+            SilkUi.Well(itemWell, s);
+
+            // Every discovered inventory entry has its own small item sprite.
+            // Keep it inside the selector so the gamepad user can identify an
+            // item without opening the native inventory screen.
+            float iconSize = Mathf.Max(18f * s, itemWell.height - 6f * s);
+            Rect iconRect = new Rect(itemWell.x + 3f * s, itemWell.y + (itemWell.height - iconSize) * 0.5f,
+                iconSize, iconSize);
+            if (item.Sprite != null)
+                SilkUi.Fill(iconRect, item.Sprite, Color.white);
+
+            SilkUi.Text(new Rect(iconRect.xMax + 6f * s, itemWell.y, itemWell.width - iconSize - 12f * s, itemWell.height),
                 item.Name + "  [" + item.Category + "]", SilkUi.Item, UiKit.Bone);
 
             float y = panel.y + 196f * s;
@@ -1085,7 +1079,11 @@ namespace RosaryShare
         {
             int step = _amount < 200 ? 10 : (_amount < 2000 ? 50 : (_amount < 20000 ? 250 : 1000));
             int cap = EffectiveBalance();
-            if (cap <= 0) cap = ModConfig.MaxSendAmount;
+            if (cap <= 0)
+            {
+                SetAmount(0);
+                return;
+            }
 
             SetAmount(Mathf.Clamp(_amount + step * direction, 0, cap));
         }
@@ -1103,7 +1101,8 @@ namespace RosaryShare
             if (index < 0) index = PresetAmounts.Length - 1;
             if (index >= PresetAmounts.Length) index = 0;
 
-            SetAmount(PresetAmounts[index]);
+            int balance = EffectiveBalance();
+            SetAmount(balance > 0 ? Mathf.Min(PresetAmounts[index], balance) : 0);
         }
 
         private static string FilterDigits(string text)

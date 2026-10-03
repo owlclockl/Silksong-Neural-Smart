@@ -27,16 +27,6 @@ namespace RosaryShare
             }
         }
 
-        /// <summary>Открыто ли нативное меню предметов/карты.</summary>
-        public static bool InventoryOpen
-        {
-            get
-            {
-                try { return PlayerData.instance != null && PlayerData.instance.isInventoryOpen; }
-                catch { return false; }
-            }
-        }
-
         /// <summary>Текущее количество бусин у локального игрока.</summary>
         public static int GetGeo()
         {
