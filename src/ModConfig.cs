@@ -52,6 +52,15 @@ namespace RosaryShare
         /// <summary>Разобранное сочетание кнопок быстрой отправки (может быть null).</summary>
         public static GamepadInput.Combo QuickSendCombo { get; private set; }
 
+        // --- Items ---
+        /// <summary>
+        /// Искать ли настоящие иконки предметов в UI игры. Выключено по умолчанию:
+        /// поиск трогает сцену игры и на части сборок Silksong приводит к фризам
+        /// и вылетам при открытии вкладки «Вещи». С выключенной опцией мод рисует
+        /// собственные иконки и вообще не обращается к ресурсам игры.
+        /// </summary>
+        public static bool GameItemIcons = false;
+
         // --- Transfers ---
         public static bool AllowReceive = true;
         public static int MaxSendAmount = 100000;
@@ -185,6 +194,10 @@ namespace RosaryShare
             GamepadSwapConfirm = config.Bind(
                 "Gamepad", "Swap Confirm And Cancel", GamepadSwapConfirm,
                 "Поменять местами кнопки «принять» и «отмена» (B принимает, A отменяет). / Swap the confirm and cancel buttons (B confirms, A cancels).").Value;
+
+            GameItemIcons = config.Bind(
+                "Items", "Game Item Icons", GameItemIcons,
+                "Брать иконки предметов из UI игры (может вызывать фризы и вылеты; по умолчанию выключено). / Pull item icons from the game UI (can cause freezes and crashes; disabled by default).").Value;
 
             AllowReceive = config.Bind(
                 "Transfers", "Allow Receive", AllowReceive,

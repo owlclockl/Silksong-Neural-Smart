@@ -25,7 +25,11 @@ namespace RosaryShare
         private static FieldInfo _fieldEnterRoom;
 
         private static float _nextResolveAt;
+        private static float _nextDeepScanAt;
         private static bool _loggedResolutionFailure;
+
+        /// <summary>Как часто разрешён полный перебор объектов сцены (секунды).</summary>
+        private const float DeepScanIntervalSeconds = 5f;
 
         /// <summary>Мост разрешён и готов к чтению лобби.</summary>
         public static bool BridgeOk { get; private set; }
@@ -89,26 +93,30 @@ namespace RosaryShare
                 // с нужным именем и предпочитаем RoomManager в состоянии enterRoom.
                 MonoBehaviour fallback = null;
 
+                // Сначала быстрый поиск по имени: в 99% случаев объект один,
+                // и перебирать всю сцену каждую секунду незачем (это заметные
+                // просадки кадра в больших локациях).
+                MonoBehaviour quick = ScanObject(GameObject.Find(LobbyObjectName), ref fallback);
+                if (quick != null) return quick;
+
+                quick = ScanObject(GameObject.Find(LobbyObjectNameAlt), ref fallback);
+                if (quick != null) return quick;
+
+                if (fallback != null) return fallback;
+
+                // Полный перебор сцены — редкий запасной путь (мод XvX умеет
+                // плодить дубликаты LobbyManager при возврате в меню).
+                if (Time.unscaledTime < _nextDeepScanAt) return null;
+                _nextDeepScanAt = Time.unscaledTime + DeepScanIntervalSeconds;
+
                 GameObject[] sceneObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
                 foreach (GameObject go in sceneObjects)
                 {
                     if (go == null) continue;
                     if (go.name != LobbyObjectName && go.name != LobbyObjectNameAlt) continue;
 
-                    foreach (MonoBehaviour mb in go.GetComponents<MonoBehaviour>())
-                    {
-                        if (!mb) continue; // и реальный null, и «фейковый» null уничтоженных Unity-объектов
-                        Type type = mb.GetType();
-                        if (type.FullName != RoomManagerTypeName) continue;
-
-                        if (fallback == null) fallback = mb;
-                        try
-                        {
-                            FieldInfo er = type.GetField("enterRoom", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                            if (er != null && er.GetValue(mb) is bool b && b) return mb;
-                        }
-                        catch { /* игнорируем, возьмём fallback */ }
-                    }
+                    MonoBehaviour match = ScanObject(go, ref fallback);
+                    if (match != null) return match;
                 }
 
                 return fallback;
@@ -118,6 +126,32 @@ namespace RosaryShare
                 RosarySharePlugin.LogDebug("FindRoomManager failed: " + e.Message);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Ищет RoomManager на конкретном объекте. Возвращает компонент,
+        /// который уже вошёл в комнату, иначе запоминает его как запасной.
+        /// </summary>
+        private static MonoBehaviour ScanObject(GameObject go, ref MonoBehaviour fallback)
+        {
+            if (!go) return null;
+
+            foreach (MonoBehaviour mb in go.GetComponents<MonoBehaviour>())
+            {
+                if (!mb) continue; // и реальный null, и «фейковый» null уничтоженных Unity-объектов
+                Type type = mb.GetType();
+                if (type.FullName != RoomManagerTypeName) continue;
+
+                if (fallback == null) fallback = mb;
+                try
+                {
+                    FieldInfo er = type.GetField("enterRoom", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    if (er != null && er.GetValue(mb) is bool b && b) return mb;
+                }
+                catch { /* игнорируем, возьмём fallback */ }
+            }
+
+            return null;
         }
 
         private static void MarkFailed(string reason)
