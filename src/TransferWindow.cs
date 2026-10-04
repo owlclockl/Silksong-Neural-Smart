@@ -417,7 +417,12 @@ namespace RosaryShare
                     SyncItemSelection();
                     if (string.IsNullOrEmpty(_itemKey)) return;
                 }
-                error = mgr.TrySendItem(target, _itemKey, _amount);
+                ItemBridge.ItemEntry entry = ItemBridge.Find(_itemKey);
+                if (entry == null) return;
+                int available = ItemBridge.Count(_itemKey);
+                if (available <= 0) return;
+                int sendCount = entry.Unique ? 1 : Mathf.Clamp(_amount, 1, available);
+                error = mgr.TrySendItem(target, _itemKey, sendCount);
                 if (error == TransferManager.SendError.Ok) SyncItemSelection();
             }
             else error = mgr.TrySend(target, _amount, _resource);
@@ -466,7 +471,7 @@ namespace RosaryShare
             // подсказка предмета рисуется поверх всего, кроме курсора
             if (!string.IsNullOrEmpty(_tipTitle))
                 SilkUi.Tooltip(_tipAt, _tipTitle, _tipLine, scale,
-                    new Rect(0f, 0f, Screen.width, Screen.height));
+                    new Rect(8f, 8f, Screen.width - 16f, Screen.height - 16f));
 
             if (Event.current.type == EventType.Repaint)
             {
@@ -812,16 +817,19 @@ namespace RosaryShare
             Rect plus = new Rect(field.xMax + 6f * s, y, stepW, 34f * s);
             Rect all = new Rect(plus.xMax + 10f * s, y, 64f * s, 34f * s);
 
-            bool mh, mf, xh, xf, ah, af;
-            if (Control(FocusMinus, minus, true, out mh, out mf)) StepAmount(-1);
-            DrawAmountField(field, s);
-            if (Control(FocusPlus, plus, true, out xh, out xf)) StepAmount(1);
-            if (Control(FocusItemAll, all, false, out ah, out af)) SetAmount(Mathf.Min(EffectiveBalance(), ModConfig.MaxSendAmount));
+            ItemBridge.ItemEntry currentItem = ItemBridge.Find(_itemKey);
+            bool isUnique = currentItem != null && currentItem.Unique;
+            bool canStep = !isUnique && EffectiveBalance() > 0;
 
-            bool hasStack = EffectiveBalance() > 0;
-            SilkUi.SmallButton(minus, "−", false, mh, mf, hasStack, s);
-            SilkUi.SmallButton(plus, "+", false, xh, xf, hasStack, s);
-            SilkUi.SmallButton(all, Texts.AllBeads, hasStack && _amount == EffectiveBalance(), ah, af, hasStack, s);
+            bool mh, mf, xh, xf, ah, af;
+            if (Control(FocusMinus, minus, true, out mh, out mf)) { if (canStep) StepAmount(-1); }
+            DrawAmountField(field, s);
+            if (Control(FocusPlus, plus, true, out xh, out xf)) { if (canStep) StepAmount(1); }
+            if (Control(FocusItemAll, all, false, out ah, out af)) { if (canStep) SetAmount(Mathf.Min(EffectiveBalance(), ModConfig.MaxSendAmount)); }
+
+            SilkUi.SmallButton(minus, "−", false, mh, mf, canStep, s);
+            SilkUi.SmallButton(plus, "+", false, xh, xf, canStep, s);
+            SilkUi.SmallButton(all, Texts.AllBeads, canStep && _amount == EffectiveBalance(), ah, af, canStep, s);
 
             SilkUi.Text(new Rect(all.xMax + 12f * s, y, rightW - (all.xMax - rightX) - 12f * s, 34f * s),
                 string.Format(Texts.AvailableFormat, EffectiveBalance()), SilkUi.Hint, UiKit.BoneDim);
@@ -844,21 +852,36 @@ namespace RosaryShare
         private static void DrawItemIcon(Rect rect, ItemBridge.ItemEntry entry)
         {
             if (entry == null) return;
-            if (entry.Sprite != null) SilkUi.Sprite(rect, entry.Sprite, Color.white);
-            else if (entry.FallbackSprite != null) SilkUi.Fill(rect, entry.FallbackSprite, Color.white);
+            if (entry.Sprite != null)
+            {
+                SilkUi.Sprite(rect, entry.Sprite, Color.white);
+            }
+            else if (entry.FallbackSprite != null)
+            {
+                SilkUi.FillFitted(rect, entry.FallbackSprite, Color.white);
+            }
         }
 
         /// <summary>Иконка вещи и количество в углу ячейки.</summary>
         private static void DrawSlotContent(Rect cell, ItemBridge.ItemEntry entry, float s)
         {
             float pad = 6f * s;
-            DrawItemIcon(new Rect(cell.x + pad, cell.y + pad, cell.width - pad * 2f, cell.height - pad * 2f), entry);
+            Rect iconRect = new Rect(cell.x + pad, cell.y + pad, cell.width - pad * 2f, cell.height - pad * 2f);
+            DrawItemIcon(iconRect, entry);
 
             int owned = entry.Amount;
             if (entry.Unique || owned <= 1) return;
 
-            Rect badge = new Rect(cell.x + 4f * s, cell.yMax - 17f * s, cell.width - 8f * s, 14f * s);
-            SilkUi.Text(badge, "×" + owned, SilkUi.Badge, UiKit.Gold);
+            string countText = "×" + owned;
+            Vector2 size = SilkUi.Badge.CalcSize(new GUIContent(countText));
+            float badgeW = size.x + 8f * s;
+            float badgeH = 14f * s;
+            Rect badgeRect = new Rect(cell.xMax - badgeW - 3f * s, cell.yMax - badgeH - 3f * s, badgeW, badgeH);
+
+            SilkUi.FillColor(badgeRect, new Color(0.04f, 0.03f, 0.05f, 0.88f));
+            SilkUi.Frame(badgeRect, new Color(UiKit.GoldDim.r, UiKit.GoldDim.g, UiKit.GoldDim.b, 0.5f), 1f);
+            SilkUi.Text(new Rect(badgeRect.x, badgeRect.y - 1f * s, badgeRect.width - 2f * s, badgeRect.height),
+                countText, SilkUi.Badge, UiKit.Gold);
         }
 
         private int FocusedSlotIndex()
@@ -930,6 +953,25 @@ namespace RosaryShare
                 _amountText = FilterDigits(after);
                 int parsed;
                 _amount = int.TryParse(_amountText, out parsed) ? parsed : 0;
+
+                if (_resource == TransferManager.ResourceKind.Item)
+                {
+                    ItemBridge.ItemEntry currentItem = ItemBridge.Find(_itemKey);
+                    if (currentItem != null && currentItem.Unique)
+                    {
+                        _amount = 1;
+                        _amountText = "1";
+                    }
+                    else
+                    {
+                        int cap = EffectiveBalance();
+                        if (cap > 0 && _amount > cap)
+                        {
+                            _amount = cap;
+                            _amountText = cap.ToString();
+                        }
+                    }
+                }
             }
 
             if (_activate && _focusId == FocusField)
@@ -1185,20 +1227,37 @@ namespace RosaryShare
                 int count = _itemView.Count;
                 int rows = Mathf.Max(1, (count + GridCols - 1) / GridCols);
                 int maxOffset = Mathf.Max(0, rows - GridRows);
-                int next = slotIndex + (dx != 0 ? dx : dy * GridCols);
 
-                if (next >= 0 && next < count)
+                if (dx < 0 && slotIndex % GridCols == 0)
                 {
-                    SelectSlot(next, maxOffset);
+                    // Выход влево из первого столбца — переходим пространственно к списку игроков
+                }
+                else if (dx > 0 && slotIndex % GridCols == GridCols - 1)
+                {
+                    // Правый край строки — не перескакиваем на следующую строку
+                }
+                else if (dy < 0 && slotIndex < GridCols)
+                {
+                    // Верхний ряд — выходим вверх на вкладку «Вещи»
+                    SetFocus(FocusItems);
                     return;
                 }
-
-                // вниз с последнего неполного ряда — встаём на последнюю вещь,
-                // и только потом фокус уходит из решётки к количеству
-                if (dy > 0 && next >= count && slotIndex < count - 1)
+                else
                 {
-                    SelectSlot(count - 1, maxOffset);
-                    return;
+                    int next = slotIndex + (dx != 0 ? dx : dy * GridCols);
+
+                    if (next >= 0 && next < count)
+                    {
+                        SelectSlot(next, maxOffset);
+                        return;
+                    }
+
+                    // вниз с последнего неполного ряда — встаём на последнюю вещь
+                    if (dy > 0 && next >= count && slotIndex < count - 1)
+                    {
+                        SelectSlot(count - 1, maxOffset);
+                        return;
+                    }
                 }
             }
 

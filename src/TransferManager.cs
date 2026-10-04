@@ -521,7 +521,12 @@ namespace RosaryShare
                 foreach (PendingTx tx in _pending)
                 {
                     if (GameBridge.InGame) { if (tx.Resource == ResourceKind.Item) ItemBridge.TryAdd(tx.ItemKey, tx.Amount); else if (tx.Resource == ResourceKind.Shards) GameBridge.AddShards(tx.Amount); else GameBridge.AddGeo(tx.Amount); }
-                    AddHistory(string.Format(tx.Resource == ResourceKind.Shards ? Texts.T("↩ Возврат: {0} осколков (лобби закрыто)", "↩ Refunded: {0} shards (lobby closed)") : Texts.T("↩ Возврат: {0} бусин (лобби закрыто)", "↩ Refunded: {0} beads (lobby closed)"), tx.Amount), ToastLog.Kind.Warn);
+                    string refundMsg = tx.Resource == ResourceKind.Item
+                        ? string.Format(Texts.T("↩ Возврат: {0} × {1} (лобби закрыто)", "↩ Refunded: {0} × {1} (lobby closed)"), tx.Amount, ItemBridge.NameOf(tx.ItemKey))
+                        : (tx.Resource == ResourceKind.Shards
+                            ? string.Format(Texts.T("↩ Возврат: {0} осколков (лобби закрыто)", "↩ Refunded: {0} shards (lobby closed)"), tx.Amount)
+                            : string.Format(Texts.T("↩ Возврат: {0} бусин (лобби закрыто)", "↩ Refunded: {0} beads (lobby closed)"), tx.Amount));
+                    AddHistory(refundMsg, ToastLog.Kind.Warn);
                 }
                 _pending.Clear();
 
