@@ -77,11 +77,21 @@ namespace RosaryShare
         private static readonly Dictionary<string, ItemEntry> ByKey = new Dictionary<string, ItemEntry>();
         private static readonly List<SpriteCandidate> GameSprites = new List<SpriteCandidate>();
         private static readonly HashSet<int> GameSpriteIds = new HashSet<int>();
+        private static readonly Dictionary<string, UnityEngine.Sprite> SceneUiSpritesByField = new Dictionary<string, UnityEngine.Sprite>(StringComparer.OrdinalIgnoreCase);
         private static Type _resolvedType;
         private static Texts.Lang _resolvedLang;
         private static bool _loadedSpritesScanned;
         private static bool _resourcesScanned;
+        private static bool _sceneUiScanned;
+        private static bool _spriteCandidateCapWarned;
         private static float _nextSpriteRefresh;
+
+        // Sprite discovery must stay conservative.  A previous implementation tried
+        // Resources.LoadAll<Sprite>(string.Empty) when the player opened the Items tab;
+        // in Silksong that can pull a huge amount of art into memory at once and crash
+        // the Unity player.  The tab is allowed to fall back to procedural icons instead.
+        private const int MaxSpriteCandidates = 4096;
+        private const int MaxSceneUiBehaviours = 512;
 
         // Exact field names that must never be touched
         private static readonly HashSet<string> Excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -346,20 +356,38 @@ namespace RosaryShare
             if (target == null) return;
             target.Clear();
 
-            EnsureCatalog();
-            for (int i = 0; i < ItemsInternal.Count; i++)
+            try
             {
-                ItemEntry entry = ItemsInternal[i];
-                entry.Amount = Count(entry.Key);
-                if (entry.Amount > 0) target.Add(entry);
+                EnsureCatalog();
+                for (int i = 0; i < ItemsInternal.Count; i++)
+                {
+                    ItemEntry entry = ItemsInternal[i];
+                    entry.Amount = Count(entry.Key);
+                    if (entry.Amount > 0) target.Add(entry);
+                }
+            }
+            catch (Exception e)
+            {
+                RosarySharePlugin.LogWarning("Could not build item inventory view: " + e.Message);
+                target.Clear();
             }
         }
 
         private static bool TryGet(string key, out ItemEntry entry)
         {
-            EnsureCatalog();
             entry = null;
-            return !string.IsNullOrEmpty(key) && ByKey.TryGetValue(key, out entry);
+            if (string.IsNullOrEmpty(key)) return false;
+
+            try
+            {
+                EnsureCatalog();
+                return ByKey.TryGetValue(key, out entry);
+            }
+            catch (Exception e)
+            {
+                RosarySharePlugin.LogDebug("Item catalogue lookup failed: " + e.Message);
+                return false;
+            }
         }
 
         private static object GetPlayerData()
@@ -378,16 +406,20 @@ namespace RosaryShare
             {
                 float now = Time.unscaledTime;
                 if (now < _nextSpriteRefresh) return;
-                _nextSpriteRefresh = now + 1.5f;
+                _nextSpriteRefresh = now + 5f;
 
+                // Do only bounded, already-loaded lookups.  Opening the Items tab must
+                // never force Unity to load every resource in the game.
                 if (!_loadedSpritesScanned)
                 {
                     _loadedSpritesScanned = true;
                     ScanLoadedSprites();
                 }
-                else if (HasMissingSprites())
+
+                if (!_sceneUiScanned)
                 {
-                    ScanLoadedSprites();
+                    _sceneUiScanned = true;
+                    ScanSceneUiSprites();
                 }
 
                 int matched = AssignGameSprites();
@@ -395,8 +427,7 @@ namespace RosaryShare
                 if (matched < ItemsInternal.Count && !_resourcesScanned)
                 {
                     _resourcesScanned = true;
-                    ScanResourceSprites();
-                    AssignGameSprites();
+                    RosarySharePlugin.LogDebug("Skipped deep Resources.LoadAll sprite scan for item icons; using loaded sprites or procedural fallbacks for missing icons.");
                 }
             }
             catch (Exception e)
@@ -421,16 +452,10 @@ namespace RosaryShare
 
         private static void ScanResourceSprites()
         {
-            try
-            {
-                UnityEngine.Sprite[] sprites = Resources.LoadAll<UnityEngine.Sprite>(string.Empty);
-                AddSprites(sprites);
-                RosarySharePlugin.LogDebug("Resources sprites available for item matching: " + GameSprites.Count + ".");
-            }
-            catch (Exception e)
-            {
-                RosarySharePlugin.LogDebug("Could not load Resources sprites: " + e.Message);
-            }
+            // Intentionally disabled.  Loading from an empty Resources path can load
+            // most of the game's packed art into memory and crash the player when the
+            // Items tab is opened.  Missing item icons are handled by procedural fallbacks.
+            RosarySharePlugin.LogDebug("Deep Resources sprite scan is disabled for stability.");
         }
 
         private static void AddSprites(UnityEngine.Sprite[] sprites)
@@ -438,19 +463,31 @@ namespace RosaryShare
             if (sprites == null) return;
             for (int i = 0; i < sprites.Length; i++)
             {
+                if (GameSprites.Count >= MaxSpriteCandidates)
+                {
+                    if (!_spriteCandidateCapWarned)
+                    {
+                        _spriteCandidateCapWarned = true;
+                        RosarySharePlugin.LogDebug("Item icon lookup reached the safe sprite candidate cap (" + MaxSpriteCandidates + "); remaining icons will use fallbacks if needed.");
+                    }
+                    return;
+                }
+
                 UnityEngine.Sprite sprite = sprites[i];
                 if (sprite == null) continue;
 
                 try
                 {
-                    int id = sprite.GetInstanceID();
-                    if (!GameSpriteIds.Add(id)) continue;
-
                     string rawName = sprite.name;
                     if (string.IsNullOrEmpty(rawName)) continue;
 
-                    string normalized = Normalize(rawName);
+                    int id = sprite.GetInstanceID();
+                    if (!GameSpriteIds.Add(id)) continue;
+
                     List<string> tokens = Tokenize(rawName);
+                    if (IsNoisySpriteName(tokens)) continue;
+
+                    string normalized = Normalize(rawName);
 
                     int w = 0, h = 0;
                     try
@@ -459,6 +496,8 @@ namespace RosaryShare
                         h = Mathf.RoundToInt(sprite.rect.height);
                     }
                     catch { }
+
+                    if (w > 1024 || h > 1024) continue;
 
                     GameSprites.Add(new SpriteCandidate
                     {
@@ -475,6 +514,17 @@ namespace RosaryShare
                     // destroyed or unloaded asset
                 }
             }
+        }
+
+        private static bool IsNoisySpriteName(List<string> tokens)
+        {
+            if (tokens == null || tokens.Count == 0) return true;
+            for (int i = 0; i < tokens.Count; i++)
+            {
+                if (NoiseSpriteTokens.Contains(tokens[i]))
+                    return true;
+            }
+            return false;
         }
 
         private static bool HasMissingSprites()
@@ -530,58 +580,91 @@ namespace RosaryShare
         }
 
         /// <summary>
-        /// Поиск прямого спрайта из компонентов UI инвентаря игры (если сцена загружена).
+        /// Один ограниченный проход по активному UI игры.  Старый код делал такой
+        /// FindObjectsOfType + рефлексию для каждого предмета отдельно, что было
+        /// слишком тяжело именно при открытии вкладки «Вещи».
         /// </summary>
-        private static UnityEngine.Sprite TryResolveFromSceneUI(string fieldName)
+        private static void ScanSceneUiSprites()
         {
+            SceneUiSpritesByField.Clear();
+
             try
             {
-                // Ищем любые активные компоненты UI инвентаря с полями привязки к PlayerData
                 MonoBehaviour[] behaviours = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
-                for (int i = 0; i < behaviours.Length; i++)
+                int inspected = 0;
+
+                for (int i = 0; i < behaviours.Length && inspected < MaxSceneUiBehaviours; i++)
                 {
                     MonoBehaviour mb = behaviours[i];
                     if (!mb) continue;
-                    Type t = mb.GetType();
+
+                    Type t;
+                    try { t = mb.GetType(); }
+                    catch { continue; }
+
                     string typeName = t.Name;
+                    if (!LooksLikeInventoryUi(typeName)) continue;
+                    inspected++;
 
-                    if (!typeName.Contains("Inventory") && !typeName.Contains("Item") &&
-                        !typeName.Contains("Collectable") && !typeName.Contains("Pane") &&
-                        !typeName.Contains("Display") && !typeName.Contains("Satchel"))
-                        continue;
+                    FieldInfo[] fields;
+                    try { fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance); }
+                    catch { continue; }
 
-                    FieldInfo[] fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    bool matchesField = false;
+                    UnityEngine.Sprite sprite = null;
                     for (int f = 0; f < fields.Length; f++)
                     {
                         FieldInfo fi = fields[f];
-                        if (fi.FieldType == typeof(string))
+                        if (fi.FieldType != typeof(UnityEngine.Sprite)) continue;
+                        try
+                        {
+                            sprite = fi.GetValue(mb) as UnityEngine.Sprite;
+                            if (sprite != null) break;
+                        }
+                        catch { }
+                    }
+                    if (sprite == null) continue;
+
+                    for (int f = 0; f < fields.Length; f++)
+                    {
+                        FieldInfo fi = fields[f];
+                        if (fi.FieldType != typeof(string)) continue;
+
+                        try
                         {
                             string val = fi.GetValue(mb) as string;
-                            if (string.Equals(val, fieldName, StringComparison.OrdinalIgnoreCase))
-                            {
-                                matchesField = true;
-                                break;
-                            }
+                            if (string.IsNullOrEmpty(val)) continue;
+                            if (!SceneUiSpritesByField.ContainsKey(val))
+                                SceneUiSpritesByField[val] = sprite;
                         }
-                    }
-
-                    if (matchesField)
-                    {
-                        for (int f = 0; f < fields.Length; f++)
-                        {
-                            FieldInfo fi = fields[f];
-                            if (fi.FieldType == typeof(UnityEngine.Sprite))
-                            {
-                                UnityEngine.Sprite sp = fi.GetValue(mb) as UnityEngine.Sprite;
-                                if (sp != null) return sp;
-                            }
-                        }
+                        catch { }
                     }
                 }
+
+                if (SceneUiSpritesByField.Count > 0)
+                    RosarySharePlugin.LogDebug("Scene UI item sprites mapped: " + SceneUiSpritesByField.Count + ".");
             }
-            catch { }
-            return null;
+            catch (Exception e)
+            {
+                RosarySharePlugin.LogDebug("Scene UI item sprite scan failed: " + e.Message);
+            }
+        }
+
+        private static bool LooksLikeInventoryUi(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName)) return false;
+            return typeName.Contains("Inventory") || typeName.Contains("Item") ||
+                typeName.Contains("Collectable") || typeName.Contains("Pane") ||
+                typeName.Contains("Display") || typeName.Contains("Satchel");
+        }
+
+        /// <summary>
+        /// Поиск прямого спрайта из уже просканированных компонентов UI инвентаря игры.
+        /// </summary>
+        private static UnityEngine.Sprite TryResolveFromSceneUI(string fieldName)
+        {
+            if (string.IsNullOrEmpty(fieldName)) return null;
+            UnityEngine.Sprite sprite;
+            return SceneUiSpritesByField.TryGetValue(fieldName, out sprite) ? sprite : null;
         }
 
         /// <summary>
