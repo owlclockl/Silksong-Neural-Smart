@@ -117,17 +117,37 @@ namespace RosaryShare
         /// </summary>
         public static Texture2D ItemSprite(string key, string category)
         {
-            string family = (category ?? string.Empty).ToLowerInvariant();
-            int variant = StableHash(key ?? string.Empty) % 5;
+            string family = ClassifyFamily(key, category);
+            int variant = StableHash(key ?? string.Empty) % 7;
             string cacheKey = "itemSprite:" + (key ?? string.Empty) + ":" + family + ":" + variant;
 
             return Make(cacheKey, 48, 48, false, delegate(float u, float v)
             {
-                return ShadeItemSprite(u, v, family, variant);
+                return ShadeItemSprite(u, v, family, variant, key);
             });
         }
 
-        private static Color ShadeItemSprite(float u, float v, string family, int variant)
+        private static string ClassifyFamily(string key, string category)
+        {
+            string combined = ((key ?? string.Empty) + " " + (category ?? string.Empty)).ToLowerInvariant();
+            if (combined.Contains("key") || combined.Contains("ключ")) return "key";
+            if (combined.Contains("flea") || combined.Contains("блох")) return "flea";
+            if (combined.Contains("egg") || combined.Contains("яйц")) return "egg";
+            if (combined.Contains("scroll") || combined.Contains("psalm") || combined.Contains("choral") ||
+                combined.Contains("свит") || combined.Contains("псал") || combined.Contains("хорал")) return "scroll";
+            if (combined.Contains("metal") || combined.Contains("craft") || combined.Contains("ore") ||
+                combined.Contains("метал") || combined.Contains("руд")) return "metal";
+            if (combined.Contains("berry") || combined.Contains("oil") || combined.Contains("herb") ||
+                combined.Contains("ягод") || combined.Contains("масл")) return "berry";
+            if (combined.Contains("locket") || combined.Contains("memento") || combined.Contains("keepsake") ||
+                combined.Contains("медальон") || combined.Contains("памятн")) return "locket";
+            if (combined.Contains("relic") || combined.Contains("effigy") || combined.Contains("cylinder") ||
+                combined.Contains("commandment") || combined.Contains("seal") || combined.Contains("реликв") ||
+                combined.Contains("идол") || combined.Contains("печать") || combined.Contains("цилиндр")) return "relic";
+            return "item";
+        }
+
+        private static Color ShadeItemSprite(float u, float v, string family, int variant, string key)
         {
             float x = (u - 0.5f) * 2f;
             float y = (v - 0.5f) * 2f;
@@ -137,52 +157,139 @@ namespace RosaryShare
             // Мягкий ореол и тонкий ободок читаются даже на тёмной панели.
             float halo = 1f - Mathf.Clamp01((d - 0.32f) / 0.64f);
             pixel = Over(pixel, new Color(CrimsonDeep.r, CrimsonDeep.g, CrimsonDeep.b, 0.55f), halo * halo * 0.8f);
-            float rim = 1f - Mathf.Clamp01(Mathf.Abs(d - 0.76f) / 0.07f);
-            pixel = Over(pixel, new Color(Gold.r, Gold.g, Gold.b, 0.82f), rim);
+            float rim = 1f - Mathf.Clamp01(Mathf.Abs(d - 0.78f) / 0.06f);
+            pixel = Over(pixel, new Color(Gold.r, Gold.g, Gold.b, 0.85f), rim);
 
-            Color primary = Color.Lerp(Crimson, Gold, variant / 4f * 0.35f);
-            Color highlight = Color.Lerp(Bone, Gold, variant / 4f);
+            Color primary = Color.Lerp(Crimson, Gold, (variant % 5) / 4f * 0.40f);
+            Color highlight = Color.Lerp(Bone, Gold, (variant % 5) / 4f);
             float shape = 0f;
 
-            if (family.Contains("key") || family.Contains("quest"))
+            if (family == "key")
             {
-                // Ключ: головка, стержень и два зубца.
-                float head = 1f - Mathf.Clamp01((Mathf.Sqrt((x + 0.34f) * (x + 0.34f) + y * y) - 0.22f) / 0.07f);
-                float shaft = x > -0.18f && x < 0.53f
-                    ? 1f - Mathf.Clamp01((Mathf.Abs(y) - 0.075f) / 0.06f) : 0f;
-                float toothA = x > 0.30f && x < 0.48f && y > 0.04f && y < 0.22f ? 1f : 0f;
-                float toothB = x > 0.38f && x < 0.56f && y < -0.04f && y > -0.22f ? 1f : 0f;
-                shape = Mathf.Max(Mathf.Max(head, shaft), Mathf.Max(toothA, toothB));
+                // Ключ: резная кольцевая головка с отверстием, зубчатый стержень и бороздки.
+                float headOuter = 1f - Mathf.Clamp01((Mathf.Sqrt((x + 0.30f) * (x + 0.30f) + (y - 0.02f) * (y - 0.02f)) - 0.24f) / 0.05f);
+                float headInner = 1f - Mathf.Clamp01((0.10f - Mathf.Sqrt((x + 0.30f) * (x + 0.30f) + (y - 0.02f) * (y - 0.02f))) / 0.04f);
+                float headRing = Mathf.Clamp01(headOuter * headInner);
+
+                float shaft = (x > -0.15f && x < 0.52f)
+                    ? 1f - Mathf.Clamp01((Mathf.Abs(y) - 0.065f) / 0.04f) : 0f;
+
+                float tooth1 = (x > 0.28f && x < 0.46f && y > 0.04f && y < 0.28f)
+                    ? 1f - Mathf.Clamp01((Mathf.Max(Mathf.Abs(x - 0.37f) - 0.07f, Mathf.Abs(y - 0.16f) - 0.10f)) / 0.04f) : 0f;
+                float tooth2 = (x > 0.38f && x < 0.54f && y < -0.04f && y > -0.24f)
+                    ? 1f - Mathf.Clamp01((Mathf.Max(Mathf.Abs(x - 0.46f) - 0.06f, Mathf.Abs(y + 0.14f) - 0.08f)) / 0.04f) : 0f;
+
+                shape = Mathf.Max(Mathf.Max(headRing, shaft), Mathf.Max(tooth1, tooth2));
+                primary = new Color(0.88f, 0.74f, 0.42f, 1f); // золото ключа
+                highlight = new Color(1f, 0.95f, 0.78f, 1f);
             }
-            else if (family.Contains("map") || family.Contains("journal"))
+            else if (family == "flea")
             {
-                // Свернутый лист с центральным сгибом.
-                float sheet = x > -0.53f && x < 0.53f && y > -0.48f && y < 0.48f ? 1f : 0f;
-                float fold = x > 0.28f && x < 0.55f && y > 0.18f && y < 0.50f ? 0.35f : 0f;
-                float crease = 1f - Mathf.Clamp01((Mathf.Abs(x + 0.04f) - 0.025f) / 0.035f);
-                shape = Mathf.Max(Mathf.Max(sheet, fold), crease * 0.7f);
+                // Блоха: пухлое тельце жучка, сегменты, пара усиков и лапки
+                float bodyX = x / 0.38f;
+                float bodyY = (y + 0.06f) / 0.48f;
+                float body = 1f - Mathf.Clamp01((Mathf.Sqrt(bodyX * bodyX + bodyY * bodyY) - 0.92f) / 0.12f);
+
+                // усики
+                float antL = (y > 0.32f && y < 0.58f && x < -0.04f && x > -0.32f)
+                    ? 1f - Mathf.Clamp01(Mathf.Abs((y - 0.32f) - (-x - 0.04f) * 1.1f) / 0.06f) : 0f;
+                float antR = (y > 0.32f && y < 0.58f && x > 0.04f && x < 0.32f)
+                    ? 1f - Mathf.Clamp01(Mathf.Abs((y - 0.32f) - (x - 0.04f) * 1.1f) / 0.06f) : 0f;
+
+                shape = Mathf.Max(body, Mathf.Max(antL, antR));
+                primary = new Color(0.78f, 0.42f, 0.22f, 1f); // тёплый янтарь блохи
+
+                // светящиеся глазки
+                float eyeL = 1f - Mathf.Clamp01(Mathf.Sqrt((x + 0.14f) * (x + 0.14f) + (y - 0.24f) * (y - 0.24f)) / 0.06f);
+                float eyeR = 1f - Mathf.Clamp01(Mathf.Sqrt((x - 0.14f) * (x - 0.14f) + (y - 0.24f) * (y - 0.24f)) / 0.06f);
+                pixel = Over(pixel, Gold, Mathf.Max(eyeL, eyeR) * 0.95f);
             }
-            else if (family.Contains("ability") || family.Contains("skill"))
+            else if (family == "egg")
             {
-                // Ромб — универсальный знак способности/улучшения.
-                shape = 1f - Mathf.Clamp01((Mathf.Abs(x) + Mathf.Abs(y) - 0.55f) / 0.08f);
-                float core = 1f - Mathf.Clamp01((Mathf.Abs(x) + Mathf.Abs(y) - 0.25f) / 0.06f);
-                pixel = Over(pixel, highlight, core * 0.7f);
+                // Тухлое яйцо: каплевидная форма яйца с пятнышками
+                float eggX = x / 0.38f;
+                float eggY = y / 0.48f;
+                float eggMod = 1f + eggY * 0.32f;
+                float egg = 1f - Mathf.Clamp01((Mathf.Sqrt(eggX * eggX * eggMod + eggY * eggY) - 0.88f) / 0.12f);
+                shape = egg;
+                primary = new Color(0.48f, 0.58f, 0.32f, 1f); // ядовито-нефритовый тон яйца
+
+                // крапинки на скорлупе
+                float spot1 = 1f - Mathf.Clamp01(Mathf.Sqrt((x + 0.12f) * (x + 0.12f) + (y + 0.10f) * (y + 0.10f)) / 0.08f);
+                float spot2 = 1f - Mathf.Clamp01(Mathf.Sqrt((x - 0.10f) * (x - 0.10f) + (y - 0.08f) * (y - 0.08f)) / 0.06f);
+                float spot3 = 1f - Mathf.Clamp01(Mathf.Sqrt((x + 0.04f) * (x + 0.04f) + (y - 0.22f) * (y - 0.22f)) / 0.05f);
+                pixel = Over(pixel, new Color(0.20f, 0.28f, 0.12f, 0.9f), Mathf.Max(spot1, Mathf.Max(spot2, spot3)) * 0.85f);
             }
-            else if (family.Contains("tool") || family.Contains("crest"))
+            else if (family == "scroll")
             {
-                // Щиток/инструмент с небольшим шипом сверху.
-                float shield = x > -0.46f && x < 0.46f && y > -0.42f && y < 0.38f
-                    ? 1f - Mathf.Clamp01((Mathf.Abs(x) - (0.46f - Mathf.Max(0f, -y) * 0.20f)) / 0.06f) : 0f;
-                float point = y > 0.25f && y < 0.60f ? 1f - Mathf.Clamp01((Mathf.Abs(x) - (0.20f - (y - 0.25f) * 0.45f)) / 0.06f) : 0f;
-                shape = Mathf.Max(shield, point);
+                // Свиток / псалом: пергаментный цилиндр с лентой и печатью
+                float scrollBody = (Mathf.Abs(x) < 0.46f && Mathf.Abs(y) < 0.38f)
+                    ? 1f - Mathf.Clamp01((Mathf.Max(Mathf.Abs(x) - 0.42f, Mathf.Abs(y) - 0.34f)) / 0.05f) : 0f;
+                float rollTop = 1f - Mathf.Clamp01((Mathf.Sqrt(x * x / (0.44f * 0.44f) + (y - 0.36f) * (y - 0.36f) / (0.08f * 0.08f)) - 1f) / 0.2f);
+                float rollBot = 1f - Mathf.Clamp01((Mathf.Sqrt(x * x / (0.44f * 0.44f) + (y + 0.36f) * (y + 0.36f) / (0.08f * 0.08f)) - 1f) / 0.2f);
+                shape = Mathf.Max(scrollBody, Mathf.Max(rollTop, rollBot));
+                primary = new Color(0.88f, 0.82f, 0.70f, 1f); // пергамент
+
+                // багровая сургучная печать по центру
+                float seal = 1f - Mathf.Clamp01(d / 0.16f);
+                pixel = Over(pixel, Crimson, seal * 0.95f);
+            }
+            else if (family == "metal")
+            {
+                // Металл для ковки: слиток со скошенными фасками и блеском
+                float ingot = (Mathf.Abs(x) < (0.50f - y * 0.15f) && Mathf.Abs(y) < 0.34f)
+                    ? 1f - Mathf.Clamp01((Mathf.Max(Mathf.Abs(x) - (0.46f - y * 0.15f), Mathf.Abs(y) - 0.30f)) / 0.05f) : 0f;
+                shape = ingot;
+                primary = new Color(0.65f, 0.68f, 0.74f, 1f); // кованая сталь
+
+                // верхний металлический блик
+                float glint = (y > 0.08f && y < 0.26f && Mathf.Abs(x) < 0.38f) ? 1f : 0f;
+                pixel = Over(pixel, new Color(0.92f, 0.95f, 1f, 1f), glint * 0.7f);
+            }
+            else if (family == "berry")
+            {
+                // Моховые ягоды / эликсир: кластер ягод с черенком
+                float b1 = 1f - Mathf.Clamp01(Mathf.Sqrt((x + 0.14f) * (x + 0.14f) + (y + 0.10f) * (y + 0.10f)) / 0.24f);
+                float b2 = 1f - Mathf.Clamp01(Mathf.Sqrt((x - 0.14f) * (x - 0.14f) + (y + 0.06f) * (y + 0.06f)) / 0.24f);
+                float b3 = 1f - Mathf.Clamp01(Mathf.Sqrt(x * x + (y - 0.16f) * (y - 0.16f)) / 0.20f);
+                shape = Mathf.Max(b1, Mathf.Max(b2, b3));
+                primary = new Color(0.35f, 0.65f, 0.30f, 1f); // моховой зелёный
+
+                // черенок
+                float stem = (x > -0.05f && x < 0.14f && y > 0.18f && y < 0.52f)
+                    ? 1f - Mathf.Clamp01(Mathf.Abs((y - 0.18f) - (x + 0.05f) * 2.5f) / 0.05f) : 0f;
+                pixel = Over(pixel, new Color(0.45f, 0.35f, 0.20f, 1f), stem);
+            }
+            else if (family == "locket")
+            {
+                // Памятный медальон / сердечко на петельке
+                float hx = x * 1.2f;
+                float hy = y + 0.10f;
+                float heart = 1f - Mathf.Clamp01((Mathf.Pow(hx * hx + hy * hy - 0.35f, 3f) - hx * hx * hy * hy * hy) / 0.15f);
+                float loop = 1f - Mathf.Clamp01((Mathf.Abs(Mathf.Sqrt(x * x + (y - 0.44f) * (y - 0.44f)) - 0.10f)) / 0.04f);
+                shape = Mathf.Max(heart, loop);
+                primary = new Color(0.85f, 0.65f, 0.25f, 1f);
+                highlight = new Color(1f, 0.90f, 0.60f, 1f);
+            }
+            else if (family == "relic")
+            {
+                // Реликвия: резная каменная табличка с гравировкой
+                float tablet = (Mathf.Abs(x) < 0.44f && Mathf.Abs(y) < 0.50f)
+                    ? 1f - Mathf.Clamp01((Mathf.Max(Mathf.Abs(x) - 0.40f, Mathf.Abs(y) - 0.46f)) / 0.05f) : 0f;
+                shape = tablet;
+                primary = new Color(0.42f, 0.45f, 0.52f, 1f); // древний сланец
+
+                // золотой крест / руна в центре
+                float runeH = (Mathf.Abs(x) < 0.06f && Mathf.Abs(y) < 0.32f) ? 1f : 0f;
+                float runeV = (Mathf.Abs(y - 0.06f) < 0.06f && Mathf.Abs(x) < 0.24f) ? 1f : 0f;
+                pixel = Over(pixel, Gold, Mathf.Max(runeH, runeV) * 0.9f);
             }
             else
             {
-                // Предметы, реликвии и коллекционные вещи — бусина/талисман.
-                shape = 1f - Mathf.Clamp01((d - 0.34f) / 0.08f);
-                float shine = 1f - Mathf.Clamp01(Mathf.Sqrt((x + 0.13f) * (x + 0.13f) + (y - 0.16f) * (y - 0.16f)) / 0.12f);
-                pixel = Over(pixel, highlight, shine * 0.85f);
+                // Предметы, бусины и талисманы — сверкающий драгоценный камень
+                shape = 1f - Mathf.Clamp01((d - 0.36f) / 0.07f);
+                float shine = 1f - Mathf.Clamp01(Mathf.Sqrt((x + 0.12f) * (x + 0.12f) + (y - 0.14f) * (y - 0.14f)) / 0.14f);
+                pixel = Over(pixel, highlight, shine * 0.90f);
             }
 
             pixel = Over(pixel, new Color(0.10f, 0.025f, 0.035f, 0.9f), Mathf.Max(0f, shape - 0.18f));

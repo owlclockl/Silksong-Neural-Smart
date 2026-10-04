@@ -113,26 +113,94 @@ namespace RosaryShare
             GUI.color = prev;
         }
 
+        /// <summary>Отрисовка текстуры с сохранением пропорций и центрированием.</summary>
+        public static void FillFitted(Rect rect, Texture2D texture, Color tint)
+        {
+            if (texture == null) return;
+            Rect drawRect = FitAspect(rect, texture.width, texture.height);
+            Color prev = GUI.color;
+            GUI.color = tint;
+            GUI.DrawTexture(drawRect, texture);
+            GUI.color = prev;
+        }
+
         /// <summary>
-        /// Рисует настоящий Unity Sprite, сохраняя его прямоугольник в атласе.
-        /// Нельзя просто взять sprite.texture: тогда вместо иконки может
-        /// появиться весь атлас предметов.
+        /// Вписывает прямоугольник источника с сохранением пропорций (aspect ratio)
+        /// по центру контейнера с округлением до целых пикселей.
+        /// </summary>
+        public static Rect FitAspect(Rect container, float srcWidth, float srcHeight)
+        {
+            if (srcWidth <= 0f || srcHeight <= 0f || container.width <= 0f || container.height <= 0f)
+                return container;
+
+            float aspect = srcWidth / srcHeight;
+            float containerAspect = container.width / container.height;
+
+            if (aspect > containerAspect)
+            {
+                // Шире контейнера — центрируем по вертикали
+                float h = Mathf.Round(container.width / aspect);
+                float y = Mathf.Round(container.y + (container.height - h) * 0.5f);
+                return new Rect(container.x, y, container.width, h);
+            }
+            else
+            {
+                // Выше контейнера — центрируем по горизонтали
+                float w = Mathf.Round(container.height * aspect);
+                float x = Mathf.Round(container.x + (container.width - w) * 0.5f);
+                return new Rect(x, container.y, w, container.height);
+            }
+        }
+
+        /// <summary>
+        /// Рисует настоящий Unity Sprite, сохраняя его прямоугольник в атласе
+        /// и правильное соотношение сторон (aspect ratio).
         /// </summary>
         public static void Sprite(Rect rect, UnityEngine.Sprite sprite, Color tint)
         {
-            if (sprite == null || sprite.texture == null || sprite.texture.width <= 0 || sprite.texture.height <= 0)
+            if (sprite == null) return;
+
+            Texture2D tex = null;
+            try
+            {
+                tex = sprite.texture;
+            }
+            catch
+            {
+                return;
+            }
+
+            if (tex == null || tex.width <= 0 || tex.height <= 0)
                 return;
 
-            Rect source = sprite.textureRect;
+            Rect source;
+            try
+            {
+                source = sprite.textureRect;
+            }
+            catch
+            {
+                source = sprite.rect;
+            }
+
+            if (source.width <= 0f || source.height <= 0f)
+                source = sprite.rect;
+
+            if (source.width <= 0f || source.height <= 0f)
+                source = new Rect(0f, 0f, tex.width, tex.height);
+
+            // Сохраняем правильные пропорции спрайта (не сплющиваем и не растягиваем в квадрат)
+            Rect drawRect = FitAspect(rect, source.width, source.height);
+
             Rect uv = new Rect(
-                source.x / sprite.texture.width,
-                source.y / sprite.texture.height,
-                source.width / sprite.texture.width,
-                source.height / sprite.texture.height);
+                Mathf.Clamp01(source.x / tex.width),
+                Mathf.Clamp01(source.y / tex.height),
+                Mathf.Clamp01(source.width / tex.width),
+                Mathf.Clamp01(source.height / tex.height));
 
             Color prev = GUI.color;
             GUI.color = tint;
-            GUI.DrawTextureWithTexCoords(rect, sprite.texture, uv);
+            GUI.DrawTextureWithTexCoords(drawRect, tex, uv);
             GUI.color = prev;
         }
 
