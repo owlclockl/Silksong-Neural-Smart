@@ -111,6 +111,7 @@ error), the amount is refunded automatically — with a notification.
 | `[Gamepad] Stick Deadzone` | `0.45` | Stick deadzone for navigation. |
 | `[Gamepad] Repeat Delay` / `Repeat Rate` | `0.35` / `0.11` | Held-direction repeat. |
 | `[Gamepad] Swap Confirm And Cancel` | `false` | `B` confirms, `A` cancels. |
+| `[Items] Game Item Icons` | `false` | Pull real item icons from the game UI. Off by default: on some Silksong builds the lookup freezes or crashes the game when the Items tab is opened. With it off the mod draws its own icons and never touches game assets. |
 | `[Transfers] Allow Receive` | `true` | `false` auto-declines incoming transfers (sender is refunded). |
 | `[Transfers] Max Send Amount` | `100000` | Per-transfer outgoing limit. |
 | `[Transfers] Max Receive Amount` | `1000000` | Per-transfer incoming limit. |

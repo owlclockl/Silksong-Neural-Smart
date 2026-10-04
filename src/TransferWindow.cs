@@ -855,11 +855,12 @@ namespace RosaryShare
             if (entry.Sprite != null)
             {
                 SilkUi.Sprite(rect, entry.Sprite, Color.white);
+                return;
             }
-            else if (entry.FallbackSprite != null)
-            {
-                SilkUi.FillFitted(rect, entry.FallbackSprite, Color.white);
-            }
+
+            Texture2D fallback = entry.FallbackSprite;
+            if (fallback != null)
+                SilkUi.FillFitted(rect, fallback, Color.white);
         }
 
         /// <summary>Иконка вещи и количество в углу ячейки.</summary>

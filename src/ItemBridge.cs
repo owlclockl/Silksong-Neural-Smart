@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Reflection;
 using System.Text;
 using UnityEngine;
@@ -58,9 +60,26 @@ namespace RosaryShare
             /// <summary>Оригинальный спрайт предмета из ресурсов игры.</summary>
             public UnityEngine.Sprite Sprite;
 
-            /// <summary>Запасная пиктограмма, если игровой Sprite ещё не загружен.</summary>
-            public Texture2D FallbackSprite;
             internal FieldInfo Field;
+            private Texture2D _fallback;
+
+            /// <summary>
+            /// Запасная пиктограмма, если игровой Sprite недоступен.
+            /// Текстура генерируется лениво — при первой отрисовке, а не для всего
+            /// каталога сразу (иначе открытие вкладки «Вещи» давало заметный фриз).
+            /// </summary>
+            public Texture2D FallbackSprite
+            {
+                get
+                {
+                    if (_fallback == null)
+                    {
+                        try { _fallback = UiKit.ItemSprite(Key, CategoryKind.ToString()); }
+                        catch { _fallback = null; }
+                    }
+                    return _fallback;
+                }
+            }
         }
 
         private sealed class SpriteCandidate
@@ -80,18 +99,21 @@ namespace RosaryShare
         private static readonly Dictionary<string, UnityEngine.Sprite> SceneUiSpritesByField = new Dictionary<string, UnityEngine.Sprite>(StringComparer.OrdinalIgnoreCase);
         private static Type _resolvedType;
         private static Texts.Lang _resolvedLang;
-        private static bool _loadedSpritesScanned;
-        private static bool _resourcesScanned;
-        private static bool _sceneUiScanned;
+        private static bool _iconScanRunning;
+        private static bool _iconScanDone;
         private static bool _spriteCandidateCapWarned;
-        private static float _nextSpriteRefresh;
 
-        // Sprite discovery must stay conservative.  A previous implementation tried
-        // Resources.LoadAll<Sprite>(string.Empty) when the player opened the Items tab;
-        // in Silksong that can pull a huge amount of art into memory at once and crash
-        // the Unity player.  The tab is allowed to fall back to procedural icons instead.
-        private const int MaxSpriteCandidates = 4096;
-        private const int MaxSceneUiBehaviours = 512;
+        // Sprite discovery must stay conservative.  Earlier builds called
+        // Resources.LoadAll<Sprite>(string.Empty) / Resources.FindObjectsOfTypeAll<Sprite>()
+        // straight from OnGUI when the player opened the Items tab.  In Silksong that
+        // stalls the frame and pulls a huge amount of art into memory, which froze and
+        // then crashed the game.  Now we only ever look at sprites that already live on
+        // scene components, we do it from a time-sliced coroutine, and only once.
+        private const int MaxSpriteCandidates = 512;
+        private const int MaxSceneUiBehaviours = 256;
+
+        /// <summary>Сколько миллисекунд за кадр разрешено тратить на поиск иконок.</summary>
+        private const double FrameBudgetMs = 1.5;
 
         // Exact field names that must never be touched
         private static readonly HashSet<string> Excluded = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -235,7 +257,7 @@ namespace RosaryShare
             Type type = pd.GetType();
             if (_resolvedType == type && _resolvedLang == Texts.Current && ItemsInternal.Count > 0)
             {
-                EnsureGameSprites();
+                RequestIconScan();
                 return;
             }
 
@@ -243,6 +265,7 @@ namespace RosaryShare
             _resolvedLang = Texts.Current;
             ItemsInternal.Clear();
             ByKey.Clear();
+            ResetIconState();
 
             Dictionary<string, CanonicalCategory> safeWordCategory = BuildSafeWordCategory();
             FieldInfo[] fields = type.GetFields(BindingFlags.Public | BindingFlags.Instance);
@@ -266,15 +289,14 @@ namespace RosaryShare
                     CategoryKind = cat,
                     Unique = field.FieldType == typeof(bool),
                     Sprite = null,
-                    FallbackSprite = UiKit.ItemSprite(key, cat.ToString()),
                     Field = field,
                 };
                 ItemsInternal.Add(entry);
                 ByKey[entry.Key] = entry;
             }
 
-            EnsureGameSprites();
-            RosarySharePlugin.LogInfo("Runtime item catalogue: " + ItemsInternal.Count + " PlayerData entries; game sprites matched: " + CountGameSprites() + ".");
+            RosarySharePlugin.LogInfo("Runtime item catalogue: " + ItemsInternal.Count + " PlayerData entries.");
+            RequestIconScan();
         }
 
         public static int Count(string key)
@@ -390,6 +412,16 @@ namespace RosaryShare
             }
         }
 
+        /// <summary>Сброс состояния поиска иконок при пересборке каталога.</summary>
+        private static void ResetIconState()
+        {
+            GameSprites.Clear();
+            GameSpriteIds.Clear();
+            SceneUiSpritesByField.Clear();
+            _spriteCandidateCapWarned = false;
+            _iconScanDone = false;
+        }
+
         private static object GetPlayerData()
         {
             try { return PlayerData.instance; }
@@ -400,119 +432,192 @@ namespace RosaryShare
         //  Поиск и сопоставление спрайтов из самой игры
         // ------------------------------------------------------------------
 
-        private static void EnsureGameSprites()
+        /// <summary>
+        /// Запрос на поиск игровых иконок.  Вся тяжёлая работа вынесена из OnGUI
+        /// в корутину с бюджетом по времени, поэтому открытие вкладки «Вещи»
+        /// больше не может подвесить кадр.  По умолчанию функция выключена
+        /// (ModConfig.GameItemIcons = false) — тогда используются процедурные
+        /// иконки, и мод вообще не трогает ресурсы игры.
+        /// </summary>
+        private static void RequestIconScan()
         {
+            if (!ModConfig.GameItemIcons) return;
+            if (_iconScanDone || _iconScanRunning) return;
+
+            _iconScanRunning = true;
+            if (!RosarySharePlugin.Run(ResolveIconsRoutine()))
+            {
+                // Плагин ещё не готов — попробуем в следующий раз.
+                _iconScanRunning = false;
+            }
+        }
+
+        /// <summary>
+        /// Поэтапный, бюджетированный поиск иконок.  Берём ТОЛЬКО те спрайты,
+        /// которые уже живут в сцене на компонентах игры: они гарантированно
+        /// загружены в память, их безопасно рисовать и они ничего не подгружают.
+        /// Никаких Resources.LoadAll / FindObjectsOfTypeAll — именно они раньше
+        /// тянули в память всю графику игры и роняли её.
+        /// </summary>
+        private static IEnumerator ResolveIconsRoutine()
+        {
+            // Выходим из текущего кадра GUI, прежде чем что-либо делать.
+            yield return null;
+
+            MonoBehaviour[] behaviours = null;
             try
             {
-                float now = Time.unscaledTime;
-                if (now < _nextSpriteRefresh) return;
-                _nextSpriteRefresh = now + 5f;
-
-                // Do only bounded, already-loaded lookups.  Opening the Items tab must
-                // never force Unity to load every resource in the game.
-                if (!_loadedSpritesScanned)
-                {
-                    _loadedSpritesScanned = true;
-                    ScanLoadedSprites();
-                }
-
-                if (!_sceneUiScanned)
-                {
-                    _sceneUiScanned = true;
-                    ScanSceneUiSprites();
-                }
-
-                int matched = AssignGameSprites();
-
-                if (matched < ItemsInternal.Count && !_resourcesScanned)
-                {
-                    _resourcesScanned = true;
-                    RosarySharePlugin.LogDebug("Skipped deep Resources.LoadAll sprite scan for item icons; using loaded sprites or procedural fallbacks for missing icons.");
-                }
+                behaviours = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
             }
             catch (Exception e)
             {
-                RosarySharePlugin.LogDebug("Game item sprite lookup failed: " + e.Message);
+                RosarySharePlugin.LogDebug("Item icon scan could not enumerate scene components: " + e.Message);
             }
-        }
 
-        private static void ScanLoadedSprites()
-        {
-            try
-            {
-                UnityEngine.Sprite[] sprites = Resources.FindObjectsOfTypeAll<UnityEngine.Sprite>();
-                AddSprites(sprites);
-                RosarySharePlugin.LogDebug("Loaded game sprites available for item matching: " + GameSprites.Count + ".");
-            }
-            catch (Exception e)
-            {
-                RosarySharePlugin.LogDebug("Could not enumerate loaded game sprites: " + e.Message);
-            }
-        }
+            yield return null;
 
-        private static void ScanResourceSprites()
-        {
-            // Intentionally disabled.  Loading from an empty Resources path can load
-            // most of the game's packed art into memory and crash the player when the
-            // Items tab is opened.  Missing item icons are handled by procedural fallbacks.
-            RosarySharePlugin.LogDebug("Deep Resources sprite scan is disabled for stability.");
-        }
-
-        private static void AddSprites(UnityEngine.Sprite[] sprites)
-        {
-            if (sprites == null) return;
-            for (int i = 0; i < sprites.Length; i++)
+            if (behaviours != null)
             {
-                if (GameSprites.Count >= MaxSpriteCandidates)
+                Stopwatch slice = Stopwatch.StartNew();
+                int inspected = 0;
+
+                for (int i = 0; i < behaviours.Length && inspected < MaxSceneUiBehaviours; i++)
                 {
-                    if (!_spriteCandidateCapWarned)
+                    if (slice.Elapsed.TotalMilliseconds > FrameBudgetMs)
                     {
-                        _spriteCandidateCapWarned = true;
-                        RosarySharePlugin.LogDebug("Item icon lookup reached the safe sprite candidate cap (" + MaxSpriteCandidates + "); remaining icons will use fallbacks if needed.");
+                        yield return null;
+                        slice.Reset();
+                        slice.Start();
                     }
-                    return;
+
+                    if (InspectBehaviour(behaviours[i])) inspected++;
                 }
 
-                UnityEngine.Sprite sprite = sprites[i];
-                if (sprite == null) continue;
+                behaviours = null;
+            }
 
+            yield return null;
+
+            // Сопоставление предметов и спрайтов — тоже порциями.
+            Stopwatch matchSlice = Stopwatch.StartNew();
+            for (int i = 0; i < ItemsInternal.Count; i++)
+            {
+                if (matchSlice.Elapsed.TotalMilliseconds > FrameBudgetMs)
+                {
+                    yield return null;
+                    matchSlice.Reset();
+                    matchSlice.Start();
+                }
+
+                try { AssignGameSprite(ItemsInternal[i]); }
+                catch (Exception e) { RosarySharePlugin.LogDebug("Item icon match failed: " + e.Message); }
+            }
+
+            _iconScanRunning = false;
+            _iconScanDone = true;
+            RosarySharePlugin.LogInfo("Item icons resolved from live game UI: " + CountGameSprites() + " of " + ItemsInternal.Count + "; the rest use built-in icons.");
+        }
+
+        /// <summary>
+        /// Один компонент сцены: собираем из него спрайты и связки «строковый ключ → спрайт».
+        /// Возвращает true, если компонент похож на инвентарный UI и был разобран.
+        /// </summary>
+        private static bool InspectBehaviour(MonoBehaviour mb)
+        {
+            if (!mb) return false;
+
+            Type t;
+            try { t = mb.GetType(); }
+            catch { return false; }
+
+            if (!LooksLikeInventoryUi(t.Name)) return false;
+
+            FieldInfo[] fields;
+            try { fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance); }
+            catch { return false; }
+
+            UnityEngine.Sprite sprite = null;
+            for (int f = 0; f < fields.Length; f++)
+            {
+                if (fields[f].FieldType != typeof(UnityEngine.Sprite)) continue;
                 try
                 {
-                    string rawName = sprite.name;
-                    if (string.IsNullOrEmpty(rawName)) continue;
+                    UnityEngine.Sprite value = fields[f].GetValue(mb) as UnityEngine.Sprite;
+                    if (value == null) continue;
 
-                    int id = sprite.GetInstanceID();
-                    if (!GameSpriteIds.Add(id)) continue;
-
-                    List<string> tokens = Tokenize(rawName);
-                    if (IsNoisySpriteName(tokens)) continue;
-
-                    string normalized = Normalize(rawName);
-
-                    int w = 0, h = 0;
-                    try
-                    {
-                        w = Mathf.RoundToInt(sprite.rect.width);
-                        h = Mathf.RoundToInt(sprite.rect.height);
-                    }
-                    catch { }
-
-                    if (w > 1024 || h > 1024) continue;
-
-                    GameSprites.Add(new SpriteCandidate
-                    {
-                        Sprite = sprite,
-                        RawName = rawName,
-                        NormalizedName = normalized,
-                        Tokens = tokens,
-                        Width = w,
-                        Height = h
-                    });
+                    AddSprite(value);
+                    if (sprite == null) sprite = value;
                 }
-                catch
+                catch { }
+            }
+
+            if (sprite == null) return true;
+
+            for (int f = 0; f < fields.Length; f++)
+            {
+                if (fields[f].FieldType != typeof(string)) continue;
+                try
                 {
-                    // destroyed or unloaded asset
+                    string val = fields[f].GetValue(mb) as string;
+                    if (string.IsNullOrEmpty(val)) continue;
+                    if (!SceneUiSpritesByField.ContainsKey(val))
+                        SceneUiSpritesByField[val] = sprite;
                 }
+                catch { }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Добавляет уже загруженный спрайт в список кандидатов.
+        /// Текстура проверяется один раз здесь, чтобы при отрисовке
+        /// не всплыл «битый» ассет.
+        /// </summary>
+        private static void AddSprite(UnityEngine.Sprite sprite)
+        {
+            if (sprite == null) return;
+            if (GameSprites.Count >= MaxSpriteCandidates)
+            {
+                if (!_spriteCandidateCapWarned)
+                {
+                    _spriteCandidateCapWarned = true;
+                    RosarySharePlugin.LogDebug("Item icon lookup reached the safe sprite candidate cap (" + MaxSpriteCandidates + ").");
+                }
+                return;
+            }
+
+            try
+            {
+                string rawName = sprite.name;
+                if (string.IsNullOrEmpty(rawName)) return;
+
+                if (!GameSpriteIds.Add(sprite.GetInstanceID())) return;
+
+                // Спрайт без уже загруженной текстуры рисовать нельзя.
+                Texture2D tex = sprite.texture;
+                if (tex == null || tex.width <= 0 || tex.height <= 0) return;
+
+                List<string> tokens = Tokenize(rawName);
+                if (IsNoisySpriteName(tokens)) return;
+
+                int w = Mathf.RoundToInt(sprite.rect.width);
+                int h = Mathf.RoundToInt(sprite.rect.height);
+                if (w <= 0 || h <= 0 || w > 1024 || h > 1024) return;
+
+                GameSprites.Add(new SpriteCandidate
+                {
+                    Sprite = sprite,
+                    RawName = rawName,
+                    NormalizedName = Normalize(rawName),
+                    Tokens = tokens,
+                    Width = w,
+                    Height = h
+                });
+            }
+            catch
+            {
+                // выгруженный или уничтоженный ассет — просто пропускаем
             }
         }
 
@@ -527,48 +632,21 @@ namespace RosaryShare
             return false;
         }
 
-        private static bool HasMissingSprites()
+        private static void AssignGameSprite(ItemEntry entry)
         {
-            for (int i = 0; i < ItemsInternal.Count; i++)
-                if (ItemsInternal[i].Sprite == null) return true;
-            return false;
-        }
+            if (entry == null || entry.Sprite != null) return;
 
-        private static int AssignGameSprites()
-        {
-            int matched = 0;
-            for (int i = 0; i < ItemsInternal.Count; i++)
-            {
-                ItemEntry entry = ItemsInternal[i];
-                if (entry.Sprite != null) { matched++; continue; }
+            // 1. Прямая привязка из компонентов инвентаря игры
+            UnityEngine.Sprite direct = TryResolveFromSceneUI(entry.RawFieldName);
+            if (direct != null) { entry.Sprite = direct; return; }
 
-                // 1. Попытка прямой привязки из компонентов инвентаря игры
-                UnityEngine.Sprite direct = TryResolveFromSceneUI(entry.RawFieldName);
-                if (direct != null)
-                {
-                    entry.Sprite = direct;
-                    matched++;
-                    continue;
-                }
+            // 2. Известные алиасы имён спрайтов
+            UnityEngine.Sprite fromAlias = FindKnownAliasSprite(entry.RawFieldName);
+            if (fromAlias != null) { entry.Sprite = fromAlias; return; }
 
-                // 2. Попытка поиска по известным алиасам и шаблонам имён
-                UnityEngine.Sprite fromAlias = FindKnownAliasSprite(entry.RawFieldName);
-                if (fromAlias != null)
-                {
-                    entry.Sprite = fromAlias;
-                    matched++;
-                    continue;
-                }
-
-                // 3. Интеллектуальный поиск по токенам и исключению шума
-                UnityEngine.Sprite heuristic = FindHeuristicGameSprite(entry.RawFieldName, entry.CategoryKind);
-                if (heuristic != null)
-                {
-                    entry.Sprite = heuristic;
-                    matched++;
-                }
-            }
-            return matched;
+            // 3. Поиск по токенам с отсевом шума
+            UnityEngine.Sprite heuristic = FindHeuristicGameSprite(entry.RawFieldName, entry.CategoryKind);
+            if (heuristic != null) entry.Sprite = heuristic;
         }
 
         private static int CountGameSprites()
@@ -579,75 +657,6 @@ namespace RosaryShare
             return count;
         }
 
-        /// <summary>
-        /// Один ограниченный проход по активному UI игры.  Старый код делал такой
-        /// FindObjectsOfType + рефлексию для каждого предмета отдельно, что было
-        /// слишком тяжело именно при открытии вкладки «Вещи».
-        /// </summary>
-        private static void ScanSceneUiSprites()
-        {
-            SceneUiSpritesByField.Clear();
-
-            try
-            {
-                MonoBehaviour[] behaviours = UnityEngine.Object.FindObjectsOfType<MonoBehaviour>();
-                int inspected = 0;
-
-                for (int i = 0; i < behaviours.Length && inspected < MaxSceneUiBehaviours; i++)
-                {
-                    MonoBehaviour mb = behaviours[i];
-                    if (!mb) continue;
-
-                    Type t;
-                    try { t = mb.GetType(); }
-                    catch { continue; }
-
-                    string typeName = t.Name;
-                    if (!LooksLikeInventoryUi(typeName)) continue;
-                    inspected++;
-
-                    FieldInfo[] fields;
-                    try { fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance); }
-                    catch { continue; }
-
-                    UnityEngine.Sprite sprite = null;
-                    for (int f = 0; f < fields.Length; f++)
-                    {
-                        FieldInfo fi = fields[f];
-                        if (fi.FieldType != typeof(UnityEngine.Sprite)) continue;
-                        try
-                        {
-                            sprite = fi.GetValue(mb) as UnityEngine.Sprite;
-                            if (sprite != null) break;
-                        }
-                        catch { }
-                    }
-                    if (sprite == null) continue;
-
-                    for (int f = 0; f < fields.Length; f++)
-                    {
-                        FieldInfo fi = fields[f];
-                        if (fi.FieldType != typeof(string)) continue;
-
-                        try
-                        {
-                            string val = fi.GetValue(mb) as string;
-                            if (string.IsNullOrEmpty(val)) continue;
-                            if (!SceneUiSpritesByField.ContainsKey(val))
-                                SceneUiSpritesByField[val] = sprite;
-                        }
-                        catch { }
-                    }
-                }
-
-                if (SceneUiSpritesByField.Count > 0)
-                    RosarySharePlugin.LogDebug("Scene UI item sprites mapped: " + SceneUiSpritesByField.Count + ".");
-            }
-            catch (Exception e)
-            {
-                RosarySharePlugin.LogDebug("Scene UI item sprite scan failed: " + e.Message);
-            }
-        }
 
         private static bool LooksLikeInventoryUi(string typeName)
         {
